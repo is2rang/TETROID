@@ -1,0 +1,6 @@
+{
+  "appId": "com.lovely.tetroid",
+  "appName": "TETROID",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
