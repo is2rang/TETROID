@@ -51,12 +51,15 @@ public class MainActivity extends BridgeActivity {
 
     private String getInjectJavascript() {
         return "javascript:(function() {" +
-               // 1. 스타일(CSS) 정의 (가상패드 디자인 + 최상위 토글 버튼 스타일)
+               // 전역 상태 변수로 토글 모드 기억 (window 객체에 안전하게 안착)
+               "if (typeof window.isPadEnabled === 'undefined') window.isPadEnabled = true;" +
+
+               // 1. 스타일(CSS) 정의 (가상패드와 토글 버튼 완전 분리 설계)
                "if (!document.getElementById('tetroid-core-style')) {" +
                "  var style = document.createElement('style');" +
                "  style.id = 'tetroid-core-style';" +
                "  style.innerHTML = '*{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; } " +
-               "  #controller-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:2147483640 !important; pointer-events:auto !important; touch-action:none; display:block; } " +
+               "  #controller-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:2147483640 !important; pointer-events:auto !important; touch-action:none; } " +
                "  .pad-btn { position:absolute; width:75px; height:75px; background:rgba(255,255,255,0.2) !important; border:2px solid rgba(255,255,255,0.4) !important; border-radius:50%; color:white !important; font-weight:bold; font-size:18px; display:flex !important; justify-content:center; align-items:center; pointer-events:none; z-index:2147483641 !important; transition: background 0.05s; } " +
                "  .pad-btn.active { background:rgba(255,255,255,0.7) !important; transform:scale(0.95); } " +
                "  #btn-left { bottom:110px; left:40px; } #btn-right { bottom:110px; left:170px; } #btn-soft { bottom:30px; left:105px; } " +
@@ -70,10 +73,9 @@ public class MainActivity extends BridgeActivity {
                "  document.head.appendChild(style);" +
                "}" +
 
-               // 2. 가상 패드 레이아웃(HTML) 생성 및 루트 주입
-               "var overlay = document.getElementById('controller-overlay');" +
-               "if (!overlay) {" +
-               "  overlay = document.createElement('div');" +
+               // 2. 가상 패드 레이아웃 템플릿 정의
+               "function createOverlayElement() {" +
+               "  var overlay = document.createElement('div');" +
                "  overlay.id = 'controller-overlay';" +
                "  overlay.innerHTML = `<div id=\"btn-left\" class=\"pad-btn\" data-code=\"37\" data-name=\"ArrowLeft\">◀</div>` +" +
                "                      `<div id=\"btn-right\" class=\"pad-btn\" data-code=\"39\" data-name=\"ArrowRight\">▶</div>` +" +
@@ -82,16 +84,23 @@ public class MainActivity extends BridgeActivity {
                "                      `<div id=\"btn-cw\" class=\"pad-btn\" data-code=\"88\" data-name=\"KeyX\">X</div>` +" +
                "                      `<div id=\"btn-hard\" class=\"pad-btn\" data-code=\"32\" data-name=\"Space\">SPACE</div>` +" +
                "                      `<div id=\"btn-hold\" class=\"pad-btn\" data-code=\"67\" data-name=\"KeyC\">HOLD</div>`;" +
-               "  document.documentElement.appendChild(overlay);" + // 절대 차단되지 않는 최상위 루트에 주입
+               "  return overlay;" +
                "}" +
 
-               // 3. 기호 전용 토글 버튼(HTML) 생성 및 루트 주입
+               // 초기 렌더링 시 조건부 패드 삽입
+               "var root = document.documentElement;" +
+               "if (window.isPadEnabled && !document.getElementById('controller-overlay')) {" +
+               "  var ov = createOverlayElement();" +
+               "  root.appendChild(ov);" +
+               "}" +
+
+               // 3. 기호 전용 토글 버튼 생성 (언제나 독립 배치)
                "var toggleBtn = document.getElementById('tetroid-toggle-btn');" +
                "if (!toggleBtn) {" +
                "  toggleBtn = document.createElement('div');" +
                "  toggleBtn.id = 'tetroid-toggle-btn';" +
-               "  toggleBtn.innerText = '●';" + // 초기 상태 ON (●)
-               "  document.documentElement.appendChild(toggleBtn);" +
+               "  toggleBtn.innerText = window.isPadEnabled ? '●' : '○';" +
+               "  root.appendChild(toggleBtn);" +
                "}" +
 
                // 4. KeyboardEvent 기반 입력 발생 함수
@@ -149,25 +158,32 @@ public class MainActivity extends BridgeActivity {
                "  }" +
                "}" +
 
-               // 6. 버튼 온/오프 토글 이벤트 (● 와 ○만 심플하게 교체)
+               // 6. 버튼 온/오프 토글 이벤트 (물리적 DOM 제거 및 변수 제어 방식으로 전면 전개)
                "toggleBtn.onclick = function(e) {" +
                "  e.preventDefault(); e.stopPropagation();" +
                "  var overlayEl = document.getElementById('controller-overlay');" +
-               "  if (overlayEl) {" +
-               "    if (overlayEl.style.display === 'none') {" +
-               "      overlayEl.style.display = 'block';" +
-               "      toggleBtn.innerText = '●';" +
-               "      toggleBtn.style.borderColor = 'rgba(255,255,255,0.8)';" +
-               "    } else {" +
-               "      overlayEl.style.display = 'none';" +
-               "      toggleBtn.innerText = '○';" +
-               "      toggleBtn.style.borderColor = 'rgba(255,50,50,0.6)';" +
-               "      // 떠나기 전 눌려있던 모든 키 업(keyup) 처리" +
-               "      activeButtons.forEach(function(el) {" +
-               "        el.classList.remove('active');" +
-               "        sendKeyEvent('keyup', parseInt(el.dataset.code), el.dataset.name);" +
-               "      });" +
-               "      activeButtons.clear();" +
+               "  if (window.isPadEnabled) {" +
+               "    // PAD OFF 상태로 전환" +
+               "    window.isPadEnabled = false;" +
+               "    toggleBtn.innerText = '○';" +
+               "    toggleBtn.style.borderColor = 'rgba(255,50,50,0.6)';" +
+               "    if (overlayEl) {" +
+               "      overlayEl.remove();" + // 스타일 숨김 대신 아예 제거하여 감시자 무력화 방지 및 꼬임 차단
+               "    }" +
+               "    activeButtons.forEach(function(el) {" +
+               "      el.classList.remove('active');" +
+               "      sendKeyEvent('keyup', parseInt(el.dataset.code), el.dataset.name);" +
+               "    });" +
+               "    activeButtons.clear();" +
+               "  } else {" +
+               "    // PAD ON 상태로 전환" +
+               "    window.isPadEnabled = true;" +
+               "    toggleBtn.innerText = '●';" +
+               "    toggleBtn.style.borderColor = 'rgba(255,255,255,0.8)';" +
+               "    if (!overlayEl) {" +
+               "      var newOv = createOverlayElement();" +
+               "      root.appendChild(newOv);" +
+               "      bindHoverControls();" +
                "    }" +
                "  }" +
                "};" +
@@ -175,17 +191,18 @@ public class MainActivity extends BridgeActivity {
                // 7. 리스너 초기 바인딩
                "bindHoverControls();" +
 
-               // 8. 무적 감시자 (게임 엔진이 리셋하려 해도 최상위 루트 구조에 강제 유지)
+               // 8. 무적 감시자 (상태변수 window.isPadEnabled가 true일 때만 강제 재생성 유도)
                "if (!window.tetroidObserver) {" +
                "  window.tetroidObserver = new MutationObserver(function() {" +
-               "    var root = document.documentElement;" +
-               "    if (root) {" +
-               "      if (!document.getElementById('controller-overlay')) {" +
-               "        root.appendChild(overlay);" +
+               "    var currentRoot = document.documentElement;" +
+               "    if (currentRoot) {" +
+               "      if (window.isPadEnabled && !document.getElementById('controller-overlay')) {" +
+               "        var ovEl = createOverlayElement();" +
+               "        currentRoot.appendChild(ovEl);" +
                "        bindHoverControls();" +
                "      }" +
                "      if (!document.getElementById('tetroid-toggle-btn')) {" +
-               "        root.appendChild(toggleBtn);" +
+               "        currentRoot.appendChild(toggleBtn);" +
                "      }" +
                "    }" +
                "  });" +
