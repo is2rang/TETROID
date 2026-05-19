@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TETROID</string>
+    <string name="title_activity_main">TETROID</string>
+    <string name="package_name">com.is2rang.tetroid</string>
+    <string name="custom_url_scheme">com.is2rang.tetroid</string>
+</resources>
