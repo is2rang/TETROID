@@ -1,30 +1,14 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TETR.IO Mobile</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-    <!-- TETR.IO가 로드될 영역 -->
-    <iframe id="game-frame" src="https://tetr.io" frameborder="0" allowfullscreen></iframe>
-
-    <!-- 오버레이될 가상 컨트롤러 -->
-    <div id="controls">
-        <div class="d-pad">
-            <button class="btn" data-code="ArrowLeft">◀</button>
-            <button class="btn" data-code="ArrowDown">▼</button>
-            <button class="btn" data-code="ArrowRight">▶</button>
-        </div>
-        <div class="action-pad">
-            <button class="btn" data-code="KeyZ">Z</button>
-            <button class="btn" data-code="ArrowUp">X</button>
-            <button class="btn" data-code="Space">DROP</button>
-            <button class="btn" data-code="ShiftLeft">HOLD</button>
-        </div>
+<!-- TETR.IO 게임 레이어 위에 직접 얹어질 가상 컨트롤 패드 구조 -->
+<div id="virtual-gamepad">
+    <div class="d-pad">
+        <button class="ctrl-btn" data-code="ArrowLeft">◀</button>
+        <button class="ctrl-btn" data-code="ArrowDown">▼</button>
+        <button class="ctrl-btn" data-code="ArrowRight">▶</button>
     </div>
-
-    <script src="app.js"></script>
-</body>
-</html>
+    <div class="action-pad">
+        <button class="ctrl-btn" data-code="KeyZ">Z</button>
+        <button class="ctrl-btn" data-code="ArrowUp">X</button>
+        <button class="ctrl-btn" data-code="Space">DROP</button>
+        <button class="ctrl-btn" data-code="ShiftLeft">HOLD</button>
+    </div>
+</div>
