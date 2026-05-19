@@ -53,7 +53,7 @@ public class MainActivity extends BridgeActivity {
         return "javascript:(function() {" +
                "if (document.getElementById('controller-overlay')) return;" +
                
-               // 1. 스타일(CSS) 정의 (pointer-events를 오버레이 판 전체에 켜서 터치를 직접 소화)
+               // 1. 스타일(CSS) 정의
                "var style = document.createElement('style');" +
                "style.innerHTML = '*{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; } " +
                "#controller-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:99999999 !important; pointer-events:auto !important; touch-action:none; display:block !important; } " +
@@ -78,14 +78,37 @@ public class MainActivity extends BridgeActivity {
                "<div id=\"btn-hard\" class=\"pad-btn\" data-code=\"32\" data-name=\"Space\">SPACE</div>" +
                "<div id=\"btn-hold\" class=\"pad-btn\" data-code=\"67\" data-name=\"KeyC\">HOLD</div>`;" +
 
-               // 3. 키 입력 발생 함수
+               // 3. [최적화 핵심] 완전 우회용 원시 키 입력 발생기 정의
                "function sendKeyEvent(type, keyCode, keyName) {" +
-               "  var target = document.activeElement || document.body || window;" +
-               "  var event = new KeyboardEvent(type, { key:keyName, code:keyName, keyCode:keyCode, which:keyCode, bubbles:true, cancelable:true, view:window });" +
-               "  target.dispatchEvent(event); window.dispatchEvent(event);" +
+               // 포커스 강제 리턴 대상 지정: 게임 내부의 canvas 또는 맨 앞 요소 찾기
+               "  var gameCanvas = document.querySelector('canvas') || document.activeElement || document.body;" +
+               "  if (gameCanvas && typeof gameCanvas.focus === 'function') {" +
+               "    gameCanvas.focus();" + // [우회 1] 입력 전에 게임 메인 화면으로 포커스를 강제 이주 시킵니다.
+               "  }" +
+               
+               // [우회 2] 최신 웹 표준 초기화 함수(initKeyboardEvent)를 사용하여 브라우저가 하드웨어 입력으로 오해하도록 모방
+               "  var event = new KeyboardEvent(type, {" +
+               "    key: keyName," +
+               "    code: keyName," +
+               "    keyCode: keyCode," +
+               "    which: keyCode," +
+               "    bubbles: true," +
+               "    cancelable: true," +
+               "    composed: true," +
+               "    view: window" +
+               "  });" +
+               
+               // 객체 변조 방어막 우회용 (TETR.IO 내부 라이브러리 인식 대응)
+               "  Object.defineProperty(event, 'keyCode', { get: function() { return keyCode; } });" +
+               "  Object.defineProperty(event, 'which', { get: function() { return keyCode; } });" +
+               
+               // 윈도우, 도큐먼트, 게임 화면 전체에 주입 신호를 동시에 난사합니다.
+               "  if (gameCanvas) gameCanvas.dispatchEvent(event);" +
+               "  document.dispatchEvent(event);" +
+               "  window.dispatchEvent(event);" +
                "}" +
 
-               // 4. [수정 핵심] 정밀 좌표 히트테스트 기반 터치 감지 시스템
+               // 4. 정밀 좌표 히트테스트 기반 터치 감지 시스템
                "var activeButtons = new Set();" +
                
                "function processTouches(e) {" +
@@ -93,18 +116,15 @@ public class MainActivity extends BridgeActivity {
                "  var currentActive = new Set();" +
                "  var buttons = Array.from(document.querySelectorAll('.pad-btn'));" +
                
-               // 모든 버튼의 실시간 화면상 절대 좌표 크기(Rect) 계산 캐싱
                "  var btnRects = buttons.map(function(btn) {" +
                "    return { element: btn, rect: btn.getBoundingClientRect() };" +
                "  });" +
                
-               // 화면 위 모든 손가락 추적
                "  for (var i = 0; i < e.touches.length; i++) {" +
                "    var touch = e.touches[i];" +
                "    var tx = touch.clientX;" +
                "    var ty = touch.clientY;" +
                
-               // 수학적 계산: 현재 손가락(tx, ty)이 버튼 사각형 영역 안에 정확히 들어가 있는가?
                "    for (var j = 0; j < btnRects.length; j++) {" +
                "      var b = btnRects[j];" +
                "      if (tx >= b.rect.left && tx <= b.rect.right && ty >= b.rect.top && ty <= b.rect.bottom) {" +
@@ -153,12 +173,9 @@ public class MainActivity extends BridgeActivity {
                "  if (!document.getElementById('controller-overlay')) {" +
                "    targetBody.appendChild(overlay);" +
                "    bindHoverControls();" +
-               "    console.log('TETROID 좌표 호버 패드 복구 완료');" +
                "  }" +
                "});" +
                "observer.observe(targetBody, { childList: true, subtree: true });" +
-               
-               "console.log('TETROID 정밀 호버 엔진 가동 시작');" +
                "})();";
     }
 }
