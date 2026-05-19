@@ -10,33 +10,34 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 안드로이드 앱 내부의 웹뷰 엔진을 직접 통제합니다.
-        // Capacitor가 로딩 완료되면 실행되는 안전장치
-        this.getServer().getWebView().post(new Runnable() {
-            @Override
-            public void run() {
-                WebView webView = getServer().getWebView();
-                
-                // 웹뷰에 네이티브 감시자(Client)를 달아줍니다.
-                webView.setWebViewClient(new WebViewClient() {
-                    @Override
-                    public void onPageFinished(WebView view, String url) {
-                        super.onPageFinished(view, url);
-                        
-                        // [핵심] TETR.IO 도메인 로딩이 완전히 끝나면 가상 패드를 강제로 심어버립니다!
-                        if (url.contains("tetr.io")) {
-                            view.evaluateJavascript(getInjectJavascript(), null);
+        // 안드로이드 WebView 인스턴스를 가져옵니다. (Capacitor 표준 호환 버전)
+        final WebView webView = this.bridge.getWebView();
+
+        if (webView != null) {
+            webView.post(new Runnable() {
+                @Override
+                public void run() {
+                    // 웹뷰에 페이지 로딩 감시자를 붙입니다.
+                    webView.setWebViewClient(new WebViewClient() {
+                        @Override
+                        public void onPageFinished(WebView view, String url) {
+                            super.onPageFinished(view, url);
+                            
+                            // TETR.IO 접속 완료 시 가상 패드를 100% 강제 주입
+                            if (url != null && url.contains("tetr.io")) {
+                                view.evaluateJavascript(getInjectJavascript(), null);
+                            }
                         }
-                    }
-                });
-            }
-        });
+                    });
+                }
+            });
+        }
     }
 
     // TETR.IO 내부에 강제로 꽂아넣을 자바스크립트 + HTML + CSS 묶음 상자
     private String getInjectJavascript() {
         return "javascript:(function() {" +
-               "if (document.getElementById('controller-overlay')) return;" + // 중복 주입 방지
+               "if (document.getElementById('controller-overlay')) return;" +
                
                // 1. 스타일(CSS) 주입
                "var style = document.createElement('style');" +
