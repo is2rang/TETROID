@@ -1,9 +1,10 @@
 {
   "appId": "com.is2rang.tetroid",
-  "appName": "TETROID",
+  "appName": "TETR.IO Hover Player",
   "webDir": "www",
-  "bundledWebRuntime": false,
   "server": {
+    "url": "https://tetr.io",
+    "cleartext": true,
     "allowNavigation": [
       "tetr.io",
       "*.tetr.io"
