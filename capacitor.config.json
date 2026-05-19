@@ -2,5 +2,8 @@
   "appId": "com.is2rang.tetroid",
   "appName": "TETROID",
   "webDir": "www",
-  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://tetr.io/",
+    "cleartext": true
+  }
 }
