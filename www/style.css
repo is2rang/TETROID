@@ -1,53 +1,24 @@
-* {
-    box-sizing: border-box;
-}
-
 body, html {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    background-color: #111;
-    overflow: hidden;
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: #000;
 }
 
-/* 게임 화면: 상단 70% 차지 */
-#game-area {
-    width: 100%;
-    height: 70%;
-    background: #000;
+#game-frame {
+    width: 100vw; height: 100vh;
+    display: block;
 }
 
-#tetrio {
-    width: 100%;
-    height: 100%;
+#controls {
+    position: absolute; bottom: 20px; left: 0; width: 100%;
+    display: flex; justify-content: space-between; padding: 0 20px;
+    box-sizing: border-box; pointer-events: none; /* 버튼 외 영역 터치 통과 */
 }
 
-/* 조작 패드: 하단 30% 차지 */
-#pad-area {
-    width: 100%;
-    height: 30%;
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    background: #222;
-    padding: 10px;
-}
-
-/* 프로토타입 버튼 스타일 */
 .btn {
-    width: 40%;
-    height: 70px;
-    background: #444;
-    color: white;
-    font-size: 20px;
-    font-weight: bold;
-    border: 2px solid #666;
-    border-radius: 12px;
+    pointer-events: auto; /* 버튼만 터치 반응 */
+    width: 60px; height: 60px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white; border: none; border-radius: 50%;
+    touch-action: none; -webkit-tap-highlight-color: transparent;
 }
-
-/* 버튼 눌렸을 때 시각 효과 */
-.btn:active {
-    background: #00bcd4;
-    border-color: #fff;
-}
+.btn:active { background: rgba(255, 255, 255, 0.5); }

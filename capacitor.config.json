@@ -1,9 +1,7 @@
 {
-  "server": {
-    "allowNavigation": ["tetr.io"]
-  },
-  "android": {
-    "allowMixedContent": true,
-    "webContentsDebuggingEnabled": true
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
   }
 }

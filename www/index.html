@@ -1,63 +1,30 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TETR.IO Pad</title>
-  <style>
-    body, html {
-      margin: 0; padding: 0; width: 100%; height: 100%;
-      overflow: hidden; background: transparent;
-    }
-    /* 전체 패드 컨테이너 (터치 관통) */
-    #overlay-pad {
-      position: fixed; bottom: 0; left: 0; width: 100%; height: 220px;
-      z-index: 999999; display: flex; justify-content: space-between;
-      padding: 15px; box-sizing: border-box; pointer-events: none;
-    }
-    .btn-group {
-      display: grid; gap: 8px; pointer-events: none;
-    }
-    /* 왼쪽 조작계 (4열 2행) */
-    .left-group { grid-template-columns: repeat(4, 65px); }
-    /* 오른쪽 조작계 (3열 2행) */
-    .right-group { grid-template-columns: repeat(3, 65px); }
-    
-    /* 공통 버튼 스타일 */
-    .pad-btn {
-      height: 60px; background: rgba(255, 255, 255, 0.15);
-      border: 2px solid rgba(255, 255, 255, 0.4); border-radius: 12px;
-      color: #fff; font-weight: bold; font-size: 14px;
-      display: flex; align-items: center; justify-content: center;
-      user-select: none; -webkit-user-select: none;
-      touch-action: none; pointer-events: auto;
-    }
-    .pad-btn:active { background: rgba(255, 255, 255, 0.5); }
-    .double-btn { background: rgba(255, 200, 0, 0.2); border-color: rgba(255, 200, 0, 0.5); }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TETR.IO Mobile</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- TETR.IO가 로드될 영역 -->
+    <iframe id="game-frame" src="https://tetr.io" frameborder="0" allowfullscreen></iframe>
 
-  <div id="overlay-pad">
-    <!-- 왼쪽: 이동 및 소프트 드롭 관련 -->
-    <div class="btn-group left-group">
-      <div class="pad-btn" id="btn-left">L</div>
-      <div class="pad-btn double-btn" id="btn-left-sd">L+SD</div>
-      <div class="pad-btn double-btn" id="btn-right-sd">R+SD</div>
-      <div class="pad-btn" id="btn-right">R</div>
-      <div class="pad-btn" id="btn-hold" style="grid-column: span 2;">HOLD</div>
-      <div class="pad-btn" id="btn-sd" style="grid-column: span 2;">SOFT</div>
+    <!-- 오버레이될 가상 컨트롤러 -->
+    <div id="controls">
+        <div class="d-pad">
+            <button class="btn" data-code="ArrowLeft">◀</button>
+            <button class="btn" data-code="ArrowDown">▼</button>
+            <button class="btn" data-code="ArrowRight">▶</button>
+        </div>
+        <div class="action-pad">
+            <button class="btn" data-code="KeyZ">Z</button>
+            <button class="btn" data-code="ArrowUp">X</button>
+            <button class="btn" data-code="Space">DROP</button>
+            <button class="btn" data-code="ShiftLeft">HOLD</button>
+        </div>
     </div>
 
-    <!-- 오른쪽: 회전 및 하드 드롭 -->
-    <div class="btn-group right-group">
-      <div class="pad-btn" id="btn-ccw">CCW</div>
-      <div class="pad-btn" id="btn-180">180</div>
-      <div class="pad-btn" id="btn-cw">CW</div>
-      <div class="pad-btn" id="btn-hd" style="grid-column: span 3; height: 50px; background: rgba(0, 150, 255, 0.2);">HARD DROP</div>
-    </div>
-  </div>
-
-  <script src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
