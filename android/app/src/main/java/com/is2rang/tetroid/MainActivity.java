@@ -12,7 +12,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // [최적화] 안드로이드 그래픽 하드웨어 가속 강제 활성화 (화면 버벅임 감소)
+        // 하드웨어 가속 활성화
         getWindow().setFlags(
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED, 
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
@@ -27,7 +27,6 @@ public class MainActivity extends BridgeActivity {
                     webView.getSettings().setJavaScriptEnabled(true);
                     webView.getSettings().setDomStorageEnabled(true);
 
-                    // 크롬 클라이언트 (로딩 중 선제적 주입)
                     webView.setWebChromeClient(new WebChromeClient() {
                         @Override
                         public void onProgressChanged(WebView view, int newProgress) {
@@ -38,7 +37,6 @@ public class MainActivity extends BridgeActivity {
                         }
                     });
 
-                    // 웹뷰 클라이언트 (로딩 완료 시 주입)
                     webView.setWebViewClient(new WebViewClient() {
                         @Override
                         public void onPageFinished(WebView view, String url) {
@@ -51,33 +49,34 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    // TETR.IO 내부에 강제로 꽂아넣을 실시간 감시형 자바스크립트 엔진
     private String getInjectJavascript() {
         return "javascript:(function() {" +
                "if (document.getElementById('controller-overlay')) return;" +
                
-               // 1. 스타일(CSS) 정의
+               // 1. 스타일(CSS) 정의 (호버 시 시각적 피드백을 위해 클래스 분리)
                "var style = document.createElement('style');" +
                "style.innerHTML = '*{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; } " +
-               "#controller-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:99999999 !important; pointer-events:none; display:block !important; } " +
-               ".pad-btn { position:absolute; width:75px; height:75px; background:rgba(255,255,255,0.3) !important; border:2px solid rgba(255,255,255,0.6) !important; border-radius:50%; color:white !important; font-weight:bold; font-size:18px; display:flex !important; justify-content:center; align-items:center; pointer-events:auto; touch-action:none; z-index:99999999 !important; } " +
-               ".pad-btn:active { background:rgba(255,255,255,0.7) !important; transform:scale(0.92); } " +
+               "#controller-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:99999999 !important; pointer-events:auto; touch-action:none; display:block !important; } " +
+               ".pad-btn { position:absolute; width:75px; height:75px; background:rgba(255,255,255,0.2) !important; border:2px solid rgba(255,255,255,0.4) !important; border-radius:50%; color:white !important; font-weight:bold; font-size:18px; display:flex !important; justify-content:center; align-items:center; pointer-events:none; z-index:99999999 !important; transition: background 0.05s; } " +
+               ".pad-btn.active { background:rgba(255,255,255,0.7) !important; transform:scale(0.95); } " +
                "#btn-left { bottom:110px; left:40px; } #btn-right { bottom:110px; left:170px; } #btn-soft { bottom:30px; left:105px; } " +
                "#btn-ccw { bottom:110px; right:170px; } #btn-cw { bottom:190px; right:105px; } " +
-               "#btn-hard { bottom:110px; right:40px; background:rgba(255,50,50,0.5) !important; border-color:rgba(255,100,100,0.7) !important; } " +
-               "#btn-hold { top:40px; left:40px; width:65px; height:65px; font-size:14px; background:rgba(50,150,255,0.5) !important; }';" +
+               "#btn-hard { bottom:110px; right:40px; background:rgba(255,50,50,0.3) !important; border-color:rgba(255,100,100,0.5) !important; } " +
+               "#btn-hard.active { background:rgba(255,50,50,0.8) !important; } " +
+               "#btn-hold { top:40px; left:40px; width:65px; height:65px; font-size:14px; background:rgba(50,150,255,0.3) !important; } " +
+               "#btn-hold.active { background:rgba(50,150,255,0.8) !important; }';" +
                "document.head.appendChild(style);" +
 
                // 2. 패드 레이아웃(HTML) 생성
                "var overlay = document.createElement('div');" +
                "overlay.id = 'controller-overlay';" +
-               "overlay.innerHTML = `<div id=\"btn-left\" class=\"pad-btn\">◀</div>" +
-               "<div id=\"btn-right\" class=\"pad-btn\">▶</div>" +
-               "<div id=\"btn-soft\" class=\"pad-btn\">▼</div>" +
-               "<div id=\"btn-ccw\" class=\"pad-btn\">Z</div>" +
-               "<div id=\"btn-cw\" class=\"pad-btn\">X</div>" +
-               "<div id=\"btn-hard\" class=\"pad-btn\">SPACE</div>" +
-               "<div id=\"btn-hold\" class=\"pad-btn\">HOLD</div>`;" +
+               "overlay.innerHTML = `<div id=\"btn-left\" class=\"pad-btn\" data-code=\"37\" data-name=\"ArrowLeft\">◀</div>" +
+               "<div id=\"btn-right\" class=\"pad-btn\" data-code=\"39\" data-name=\"ArrowRight\">▶</div>" +
+               "<div id=\"btn-soft\" class=\"pad-btn\" data-code=\"40\" data-name=\"ArrowDown\">▼</div>" +
+               "<div id=\"btn-ccw\" class=\"pad-btn\" data-code=\"90\" data-name=\"KeyZ\">Z</div>" +
+               "<div id=\"btn-cw\" class=\"pad-btn\" data-code=\"88\" data-name=\"KeyX\">X</div>" +
+               "<div id=\"btn-hard\" class=\"pad-btn\" data-code=\"32\" data-name=\"Space\">SPACE</div>" +
+               "<div id=\"btn-hold\" class=\"pad-btn\" data-code=\"67\" data-name=\"KeyC\">HOLD</div>`;" +
 
                // 3. 키 입력 발생 함수
                "function sendKeyEvent(type, keyCode, keyName) {" +
@@ -86,44 +85,70 @@ public class MainActivity extends BridgeActivity {
                "  target.dispatchEvent(event); window.dispatchEvent(event);" +
                "}" +
 
-               // 4. 이벤트 바인딩 함수 (Pointer 이벤트로 딜레이 제로)
-               "function bindButtons() {" +
-               "  var configs = [" +
-               "    { id:'btn-left', code:37, name:'ArrowLeft' }," +
-               "    { id:'btn-right', code:39, name:'ArrowRight' }," +
-               "    { id:'btn-soft', code:40, name:'ArrowDown' }," +
-               "    { id:'btn-hard', code:32, name:'Space' }," +
-               "    { id:'btn-cw', code:88, name:'KeyX' }," +
-               "    { id:'btn-ccw', code:90, name:'KeyZ' }," +
-               "    { id:'btn-hold', code:67, name:'KeyC' }" +
-               "  ];" +
-               "  configs.forEach(function(btn) {" +
-               "    var el = document.getElementById(btn.id);" +
-               "    if (el) {" +
-               "      el.addEventListener('pointerdown', function(e) { e.preventDefault(); sendKeyEvent('keydown', btn.code, btn.name); });" +
-               "      el.addEventListener('pointerup', function(e) { e.preventDefault(); sendKeyEvent('keyup', btn.code, btn.name); });" +
-               "      el.addEventListener('pointerleave', function(e) { e.preventDefault(); sendKeyEvent('keyup', btn.code, btn.name); });" +
+               // 4. [핵심] 실시간 터치 추적 및 호버 입력 시스템 구현
+               "var activeButtons = new Set();" + // 현재 눌려있는 버튼 보관함
+               
+               "function processTouches(e) {" +
+               "  e.preventDefault();" +
+               "  var currentActive = new Set();" +
+               
+               // 현재 화면을 누르고 있는 모든 손가락 좌표 조사
+               "  for (var i = 0; i < e.touches.length; i++) {" +
+               "    var touch = e.touches[i];" +
+               "    var el = document.elementFromPoint(touch.clientX, touch.clientY);" +
+               
+               // 손가락 밑에 버튼이 있다면 활성화 목록에 추가
+               "    if (el && el.classList.contains('pad-btn')) {" +
+               "      currentActive.add(el);" +
+               "    }" +
+               "  }" +
+               
+               // [기존에 없었는데 새로 진입한 버튼] -> keydown 발생
+               "  currentActive.forEach(function(el) {" +
+               "    if (!activeButtons.has(el)) {" +
+               "      el.classList.add('active');" +
+               "      sendKeyEvent('keydown', parseInt(el.dataset.code), el.dataset.name);" +
                "    }" +
                "  });" +
+               
+               // [누르고 있다가 손가락이 벗어난 버튼] -> keyup 발생
+               "  activeButtons.forEach(function(el) {" +
+               "    if (!currentActive.has(el)) {" +
+               "      el.classList.remove('active');" +
+               "      sendKeyEvent('keyup', parseInt(el.dataset.code), el.dataset.name);" +
+               "    }" +
+               "  });" +
+               
+               "  activeButtons = currentActive;" +
                "}" +
 
-               // 5. 최초 주입 실행
+               // 전체 오버레이 영역에 터치 스와이프 이벤트 바인딩
+               "function bindHoverControls() {" +
+               "  var overlayEl = document.getElementById('controller-overlay');" +
+               "  if (overlayEl) {" +
+               "    overlayEl.addEventListener('touchstart', processTouches, { passive: false });" +
+               "    overlayEl.addEventListener('touchmove', processTouches, { passive: false });" +
+               "    overlayEl.addEventListener('touchend', processTouches, { passive: false });" +
+               "    overlayEl.addEventListener('touchcancel', processTouches, { passive: false });" +
+               "  }" +
+               "}" +
+
+               // 5. 최초 실행 및 구조 안착
                "var targetBody = document.body || document.documentElement;" +
                "targetBody.appendChild(overlay);" +
-               "bindButtons();" +
+               "bindHoverControls();" +
 
-               // 6. [최적화 핵심] MutationObserver 돔 변경 상시 감시자 가동
-               // TETR.IO가 화면을 새로 갈아엎어서 버튼이 증발하면 실시간으로 감지해 복구합니다.
+               // 6. MutationObserver 안전장치 유지 (UI가 지워져도 복구 후 호버 제어 재연동)
                "var observer = new MutationObserver(function() {" +
                "  if (!document.getElementById('controller-overlay')) {" +
                "    targetBody.appendChild(overlay);" +
-               "    bindButtons();" + // 다시 그려졌으므로 이벤트 리스너 재연동
-               "    console.log('TETROID 패드 무단 삭제 감지 -> 실시간 복구 완료!');" +
+               "    bindHoverControls();" +
+               "    console.log('TETROID 호버 패드 실시간 복구 완료');" +
                "  }" +
                "});" +
                "observer.observe(targetBody, { childList: true, subtree: true });" +
                
-               "console.log('TETROID MutationObserver 모니터링 가동 시작');" +
+               "console.log('TETROID 무적 호버 입력 엔진 가동');" +
                "})();";
     }
 }
