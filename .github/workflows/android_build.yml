@@ -20,26 +20,10 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        # 안전하게 Capacitor 핵심 도구를 글로벌로 먼저 설치
-        npm install -g @capacitor/cli
         npm install
-        
-        # 프로젝트 파일 목록을 로그로 출력해서 내역 확인 (디버깅용)
-        echo "=== 현재 파일 목록 ==="
-        ls -la
-        
-        # 안드로이드 폴더 강제 생성 및 동기화
-        npx cap add android
+        # [최적화] npx cap add android 단계를 완전히 제거했습니다.
+        # 대신 변경된 웹 소스코드(www)를 기존 android 폴더로 업데이트만 해줍니다.
         npx cap sync
-
-    - name: Verify Android Folder
-      run: |
-        echo "=== 생성된 파일 목록 ==="
-        ls -la
-        if [ ! -d "android" ]; then
-          echo "에러: android 폴더가 여전히 생성되지 않았습니다!"
-          exit 1
-        fi
 
     - name: Build Android APK
       run: |
