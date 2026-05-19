@@ -1,6 +1,7 @@
 package com.is2rang.tetroid;
 
 import android.os.Bundle;
+import android.view.WindowManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -11,43 +12,38 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // [최적화] 안드로이드 그래픽 하드웨어 가속 강제 활성화 (화면 버벅임 감소)
+        getWindow().setFlags(
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED, 
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+        );
+
         final WebView webView = this.bridge.getWebView();
 
         if (webView != null) {
             webView.post(new Runnable() {
                 @Override
                 public void run() {
-                    // 1. 자바스크립트 엔진 및 캐시 설정 최적화
                     webView.getSettings().setJavaScriptEnabled(true);
                     webView.getSettings().setDomStorageEnabled(true);
 
-                    // 2. 크롬 클라이언트 장착 (웹 브라우저 내부 이벤트 감지)
+                    // 크롬 클라이언트 (로딩 중 선제적 주입)
                     webView.setWebChromeClient(new WebChromeClient() {
                         @Override
                         public void onProgressChanged(WebView view, int newProgress) {
                             super.onProgressChanged(view, newProgress);
-                            // 화면 로딩이 50% 이상 진행될 때마다 선제적으로 패드 주입 시도
-                            if (newProgress > 50) {
+                            if (newProgress > 60) {
                                 view.evaluateJavascript(getInjectJavascript(), null);
                             }
                         }
                     });
 
-                    // 3. 웹뷰 클라이언트 장착 (주소 이동 및 로딩 완료 감시)
+                    // 웹뷰 클라이언트 (로딩 완료 시 주입)
                     webView.setWebViewClient(new WebViewClient() {
                         @Override
                         public void onPageFinished(WebView view, String url) {
                             super.onPageFinished(view, url);
-                            // 로딩이 완전히 끝났을 때 확실하게 한 번 더 주입
                             view.evaluateJavascript(getInjectJavascript(), null);
-                            
-                            // [안전장치] TETR.IO 내부 화면 전환을 대비해 1초 뒤, 3초 뒤에 예약 주입 실행
-                            view.postDelayed(new Runnable() {
-                                @Override public void run() { view.evaluateJavascript(getInjectJavascript(), null); }
-                            }, 1000);
-                            view.postDelayed(new Runnable() {
-                                @Override public void run() { view.evaluateJavascript(getInjectJavascript(), null); }
-                            }, 3000);
                         }
                     });
                 }
@@ -55,12 +51,12 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    // TETR.IO 내부에 강제로 꽂아넣을 자바스크립트 + HTML + CSS 묶음 상자
+    // TETR.IO 내부에 강제로 꽂아넣을 실시간 감시형 자바스크립트 엔진
     private String getInjectJavascript() {
         return "javascript:(function() {" +
-               "if (document.getElementById('controller-overlay')) return;" + // 이미 있으면 중복 생성 안 함
+               "if (document.getElementById('controller-overlay')) return;" +
                
-               // [CSS 주입] 화면 해상도에 상관없이 무조건 최상단(z-index 맥스)에 고정
+               // 1. 스타일(CSS) 정의
                "var style = document.createElement('style');" +
                "style.innerHTML = '*{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; } " +
                "#controller-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:99999999 !important; pointer-events:none; display:block !important; } " +
@@ -72,8 +68,7 @@ public class MainActivity extends BridgeActivity {
                "#btn-hold { top:40px; left:40px; width:65px; height:65px; font-size:14px; background:rgba(50,150,255,0.5) !important; }';" +
                "document.head.appendChild(style);" +
 
-               // [HTML 레이아웃 주입] document.body가 준비 안 되었을 경우 대비 안전장치 포함
-               "var targetBody = document.body || document.documentElement;" +
+               // 2. 패드 레이아웃(HTML) 생성
                "var overlay = document.createElement('div');" +
                "overlay.id = 'controller-overlay';" +
                "overlay.innerHTML = `<div id=\"btn-left\" class=\"pad-btn\">◀</div>" +
@@ -83,33 +78,52 @@ public class MainActivity extends BridgeActivity {
                "<div id=\"btn-cw\" class=\"pad-btn\">X</div>" +
                "<div id=\"btn-hard\" class=\"pad-btn\">SPACE</div>" +
                "<div id=\"btn-hold\" class=\"pad-btn\">HOLD</div>`;" +
-               "targetBody.appendChild(overlay);" +
 
-               // [키 신호 주입]
+               // 3. 키 입력 발생 함수
                "function sendKeyEvent(type, keyCode, keyName) {" +
                "  var target = document.activeElement || document.body || window;" +
                "  var event = new KeyboardEvent(type, { key:keyName, code:keyName, keyCode:keyCode, which:keyCode, bubbles:true, cancelable:true, view:window });" +
                "  target.dispatchEvent(event); window.dispatchEvent(event);" +
                "}" +
 
-               // [이벤트 바인딩]
-               "var configs = [" +
-               "  { id:'btn-left', code:37, name:'ArrowLeft' }," +
-               "  { id:'btn-right', code:39, name:'ArrowRight' }," +
-               "  { id:'btn-soft', code:40, name:'ArrowDown' }," +
-               "  { id:'btn-hard', code:32, name:'Space' }," +
-               "  { id:'btn-cw', code:88, name:'KeyX' }," +
-               "  { id:'btn-ccw', code:90, name:'KeyZ' }," +
-               "  { id:'btn-hold', code:67, name:'KeyC' }" +
-               "];" +
-               "configs.forEach(function(btn) {" +
-               "  var el = document.getElementById(btn.id);" +
-               "  if (el) {" +
-               "    el.addEventListener('touchstart', function(e) { e.preventDefault(); sendKeyEvent('keydown', btn.code, btn.name); });" +
-               "    el.addEventListener('touchend', function(e) { e.preventDefault(); sendKeyEvent('keyup', btn.code, btn.name); });" +
+               // 4. 이벤트 바인딩 함수 (Pointer 이벤트로 딜레이 제로)
+               "function bindButtons() {" +
+               "  var configs = [" +
+               "    { id:'btn-left', code:37, name:'ArrowLeft' }," +
+               "    { id:'btn-right', code:39, name:'ArrowRight' }," +
+               "    { id:'btn-soft', code:40, name:'ArrowDown' }," +
+               "    { id:'btn-hard', code:32, name:'Space' }," +
+               "    { id:'btn-cw', code:88, name:'KeyX' }," +
+               "    { id:'btn-ccw', code:90, name:'KeyZ' }," +
+               "    { id:'btn-hold', code:67, name:'KeyC' }" +
+               "  ];" +
+               "  configs.forEach(function(btn) {" +
+               "    var el = document.getElementById(btn.id);" +
+               "    if (el) {" +
+               "      el.addEventListener('pointerdown', function(e) { e.preventDefault(); sendKeyEvent('keydown', btn.code, btn.name); });" +
+               "      el.addEventListener('pointerup', function(e) { e.preventDefault(); sendKeyEvent('keyup', btn.code, btn.name); });" +
+               "      el.addEventListener('pointerleave', function(e) { e.preventDefault(); sendKeyEvent('keyup', btn.code, btn.name); });" +
+               "    }" +
+               "  });" +
+               "}" +
+
+               // 5. 최초 주입 실행
+               "var targetBody = document.body || document.documentElement;" +
+               "targetBody.appendChild(overlay);" +
+               "bindButtons();" +
+
+               // 6. [최적화 핵심] MutationObserver 돔 변경 상시 감시자 가동
+               // TETR.IO가 화면을 새로 갈아엎어서 버튼이 증발하면 실시간으로 감지해 복구합니다.
+               "var observer = new MutationObserver(function() {" +
+               "  if (!document.getElementById('controller-overlay')) {" +
+               "    targetBody.appendChild(overlay);" +
+               "    bindButtons();" + // 다시 그려졌으므로 이벤트 리스너 재연동
+               "    console.log('TETROID 패드 무단 삭제 감지 -> 실시간 복구 완료!');" +
                "  }" +
                "});" +
-               "console.log('TETROID 무적 패드 안착 성공!');" +
+               "observer.observe(targetBody, { childList: true, subtree: true });" +
+               
+               "console.log('TETROID MutationObserver 모니터링 가동 시작');" +
                "})();";
     }
 }
