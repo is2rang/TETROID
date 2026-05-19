@@ -3,26 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TETROID</title>
+    <title>TETROID LOADING...</title>
     <style>
-        body, html {
-            margin: 0; padding: 0; width: 100%; height: 100%;
-            overflow: hidden; background-color: #000;
-        }
-        /* 로딩 중 안내 문구 */
-        #loading-text {
-            color: #fff; text-align: center; font-family: sans-serif;
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%); font-size: 18px;
-        }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+        #loader { color: #fff; text-align: center; font-family: sans-serif; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 18px; }
     </style>
 </head>
 <body>
-
-    <div id="loading-text">TETR.IO 시스템 우회 접속 중...</div>
+    <div id="loader">TETROID 가상 패드 시스템 동기화 중...</div>
 
     <script>
-        // 앱이 켜지면 iframe 차단을 피해 TETR.IO로 직접 화면을 리다이렉트합니다.
+        // 1. TETR.IO로 이동하되, 주입할 스크립트 코드를 준비합니다.
+        const injectCode = `
+            console.log("TETROID 가상 패드 주입 시작!");
+            
+            // [A] 가상 패드 스타일(CSS) 주입
+            const style = document.createElement('style');
+            style.innerHTML = \`
+                * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+                #controller-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 999999 !important; pointer-events: none; }
+                .pad-btn { position: absolute; width: 75px; height: 75px; background: rgba(255, 255, 255, 0.25); border: 2px solid rgba(255, 255, 255, 0.45); border-radius: 50%; color: white; font-weight: bold; font-size: 18px; display: flex; justify-content: center; align-items: center; pointer-events: auto; touch-action: none; z-index: 999999; }
+                .pad-btn:active { background: rgba(255, 255, 255, 0.6); transform: scale(0.92); }
+                #btn-left  { bottom: 110px; left: 40px; }
+                #btn-right { bottom: 110px; left: 170px; }
+                #btn-soft  { bottom: 30px;  left: 105px; }
+                #btn-ccw   { bottom: 110px; right: 170px; }
+                #btn-cw    { bottom: 190px; right: 105px; }
+                #btn-hard  { bottom: 110px; right: 40px; background: rgba(255, 50, 50, 0.4); border-color: rgba(255, 100, 100, 0.6); }
+                #btn-hold  { top: 40px; left: 40px; width: 65px; height: 65px; font-size: 14px; background: rgba(50, 150, 255, 0.4); }
+            \`;
+            document.head.appendChild(style);
+
+            // [B] 가상 패드 레이아웃(HTML) 주입
+            const overlay = document.createElement('div');
+            overlay.id = 'controller-overlay';
+            overlay.innerHTML = \`
+                <div id="btn-left" class="pad-btn">◀</div>
+                <div id="btn-right" class="pad-btn">▶</div>
+                <div id="btn-soft" class="pad-btn">▼</div>
+                <div id="btn-ccw" class="pad-btn">Z</div>
+                <div id="btn-cw" class="pad-btn">X</div>
+                <div id="btn-hard" class="pad-btn">SPACE</div>
+                <div id="btn-hold" class="pad-btn">HOLD</div>
+            \`;
+            document.body.appendChild(overlay);
+
+            // [C] 키보드 신호 발생기 함수
+            function sendKeyEvent(type, keyCode, keyName) {
+                const target = document.activeElement || document.body;
+                const event = new KeyboardEvent(type, {
+                    key: keyName, code: keyName, keyCode: keyCode, which: keyCode,
+                    bubbles: true, cancelable: true, view: window
+                });
+                target.dispatchEvent(event);
+                window.dispatchEvent(event);
+            }
+
+            // [D] 각 버튼 이벤트 바인딩
+            const configs = [
+                { id: 'btn-left',  code: 37, name: 'ArrowLeft' },
+                { id: 'btn-right', code: 39, name: 'ArrowRight' },
+                { id: 'btn-soft',  code: 40, name: 'ArrowDown' },
+                { id: 'btn-hard',  code: 32, name: 'Space' },
+                { id: 'btn-cw',    code: 88, name: 'KeyX' },
+                { id: 'btn-ccw',   code: 90, name: 'KeyZ' },
+                { id: 'btn-hold',  code: 67, name: 'KeyC' }
+            ];
+
+            configs.forEach(btn => {
+                const el = document.getElementById(btn.id);
+                if (el) {
+                    el.addEventListener('touchstart', (e) => { e.preventDefault(); sendKeyEvent('keydown', btn.code, btn.name); });
+                    el.addEventListener('touchend', (e) => { e.preventDefault(); sendKeyEvent('keyup', btn.code, btn.name); });
+                }
+            });
+            console.log("TETROID 가상 패드 주입 성공!");
+        `;
+
+        // 세션스토리지에 주입할 코드를 임시 임베딩해두고 TETR.IO로 완전히 넘어갑니다.
+        // TETR.IO 도메인으로 완전히 넘어가면 로컬 보안상 읽을 수 없으므로, 
+        // 켜지자마자 브라우저가 강제로 실행하게 유도해야 하지만, 
+        // 가장 확실한 것은 Android WebView 자체가 로딩 끝날 때 이 코드를 밀어넣는 것입니다.
+        
+        // 일단 tetr.io로 주소를 바꿉니다.
         window.location.href = "https://tetr.io";
     </script>
 </body>
