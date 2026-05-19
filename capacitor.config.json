@@ -1,12 +1,9 @@
 {
-  "appId": "com.example.tetrio.app",
-  "appName": "TETR.IO Hover Player",
-  "webDir": "www",
   "server": {
-    "cleartext": true,
-    "allowNavigation": [
-      "tetr.io",
-      "*.tetr.io"
-    ]
+    "allowNavigation": ["tetr.io"]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true
   }
 }
