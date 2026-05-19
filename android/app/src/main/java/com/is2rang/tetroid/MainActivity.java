@@ -53,10 +53,10 @@ public class MainActivity extends BridgeActivity {
         return "javascript:(function() {" +
                "if (document.getElementById('controller-overlay')) return;" +
                
-               // 1. 스타일(CSS) 정의 (호버 시 시각적 피드백을 위해 클래스 분리)
+               // 1. 스타일(CSS) 정의 (pointer-events를 오버레이 판 전체에 켜서 터치를 직접 소화)
                "var style = document.createElement('style');" +
                "style.innerHTML = '*{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; } " +
-               "#controller-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:99999999 !important; pointer-events:auto; touch-action:none; display:block !important; } " +
+               "#controller-overlay { position:fixed; top:0; left:0; width:100%; height:100%; z-index:99999999 !important; pointer-events:auto !important; touch-action:none; display:block !important; } " +
                ".pad-btn { position:absolute; width:75px; height:75px; background:rgba(255,255,255,0.2) !important; border:2px solid rgba(255,255,255,0.4) !important; border-radius:50%; color:white !important; font-weight:bold; font-size:18px; display:flex !important; justify-content:center; align-items:center; pointer-events:none; z-index:99999999 !important; transition: background 0.05s; } " +
                ".pad-btn.active { background:rgba(255,255,255,0.7) !important; transform:scale(0.95); } " +
                "#btn-left { bottom:110px; left:40px; } #btn-right { bottom:110px; left:170px; } #btn-soft { bottom:30px; left:105px; } " +
@@ -85,25 +85,35 @@ public class MainActivity extends BridgeActivity {
                "  target.dispatchEvent(event); window.dispatchEvent(event);" +
                "}" +
 
-               // 4. [핵심] 실시간 터치 추적 및 호버 입력 시스템 구현
-               "var activeButtons = new Set();" + // 현재 눌려있는 버튼 보관함
+               // 4. [수정 핵심] 정밀 좌표 히트테스트 기반 터치 감지 시스템
+               "var activeButtons = new Set();" +
                
                "function processTouches(e) {" +
                "  e.preventDefault();" +
                "  var currentActive = new Set();" +
+               "  var buttons = Array.from(document.querySelectorAll('.pad-btn'));" +
                
-               // 현재 화면을 누르고 있는 모든 손가락 좌표 조사
+               // 모든 버튼의 실시간 화면상 절대 좌표 크기(Rect) 계산 캐싱
+               "  var btnRects = buttons.map(function(btn) {" +
+               "    return { element: btn, rect: btn.getBoundingClientRect() };" +
+               "  });" +
+               
+               // 화면 위 모든 손가락 추적
                "  for (var i = 0; i < e.touches.length; i++) {" +
                "    var touch = e.touches[i];" +
-               "    var el = document.elementFromPoint(touch.clientX, touch.clientY);" +
+               "    var tx = touch.clientX;" +
+               "    var ty = touch.clientY;" +
                
-               // 손가락 밑에 버튼이 있다면 활성화 목록에 추가
-               "    if (el && el.classList.contains('pad-btn')) {" +
-               "      currentActive.add(el);" +
+               // 수학적 계산: 현재 손가락(tx, ty)이 버튼 사각형 영역 안에 정확히 들어가 있는가?
+               "    for (var j = 0; j < btnRects.length; j++) {" +
+               "      var b = btnRects[j];" +
+               "      if (tx >= b.rect.left && tx <= b.rect.right && ty >= b.rect.top && ty <= b.rect.bottom) {" +
+               "        currentActive.add(b.element);" +
+               "      }" +
                "    }" +
                "  }" +
                
-               // [기존에 없었는데 새로 진입한 버튼] -> keydown 발생
+               // 버튼 진입 처리 (keydown)
                "  currentActive.forEach(function(el) {" +
                "    if (!activeButtons.has(el)) {" +
                "      el.classList.add('active');" +
@@ -111,7 +121,7 @@ public class MainActivity extends BridgeActivity {
                "    }" +
                "  });" +
                
-               // [누르고 있다가 손가락이 벗어난 버튼] -> keyup 발생
+               // 버튼 이탈 처리 (keyup)
                "  activeButtons.forEach(function(el) {" +
                "    if (!currentActive.has(el)) {" +
                "      el.classList.remove('active');" +
@@ -122,7 +132,7 @@ public class MainActivity extends BridgeActivity {
                "  activeButtons = currentActive;" +
                "}" +
 
-               // 전체 오버레이 영역에 터치 스와이프 이벤트 바인딩
+               // 이벤트 연결
                "function bindHoverControls() {" +
                "  var overlayEl = document.getElementById('controller-overlay');" +
                "  if (overlayEl) {" +
@@ -138,17 +148,17 @@ public class MainActivity extends BridgeActivity {
                "targetBody.appendChild(overlay);" +
                "bindHoverControls();" +
 
-               // 6. MutationObserver 안전장치 유지 (UI가 지워져도 복구 후 호버 제어 재연동)
+               // 6. 감시자 복구 로직 유지
                "var observer = new MutationObserver(function() {" +
                "  if (!document.getElementById('controller-overlay')) {" +
                "    targetBody.appendChild(overlay);" +
                "    bindHoverControls();" +
-               "    console.log('TETROID 호버 패드 실시간 복구 완료');" +
+               "    console.log('TETROID 좌표 호버 패드 복구 완료');" +
                "  }" +
                "});" +
                "observer.observe(targetBody, { childList: true, subtree: true });" +
                
-               "console.log('TETROID 무적 호버 입력 엔진 가동');" +
+               "console.log('TETROID 정밀 호버 엔진 가동 시작');" +
                "})();";
     }
 }
