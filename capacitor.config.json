@@ -4,6 +4,7 @@
   "webDir": "www",
   "bundledWebRuntime": false,
   "server": {
-    "url": "https://tetr.io/"
+    "url": "https://tetr.io/",
+    "allowNavigation": ["tetr.io"]
   }
 }
