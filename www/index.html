@@ -3,13 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>TETR.IO Injection Loader</title>
+  <title>TETR.IO Bootloader</title>
   <style>
-    body, html { margin: 0; padding: 0; background: #000; width: 100%; height: 100%; overflow: hidden; }
+    body, html { margin: 0; padding: 0; background: #000; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; color: #fff; font-family: sans-serif; }
   </style>
 </head>
 <body>
-  <!-- 내부 백그라운드에서 실행되어 TETR.IO 원격 페이지에 코드를 찔러넣을 스크립트 로더 -->
-  <script src="app.js"></script>
+  <div>TETR.IO 로딩 중...</div>
+  <script>
+    // 앱이 켜지면 로컬 엔진을 활성화한 뒤 TETR.IO 정식 페이지로 주소를 이동시킵니다.
+    window.location.href = "https://tetr.io/";
+  </script>
 </body>
 </html>

@@ -1,14 +1,12 @@
 {
-  "appId": "com.is2rang.tetroid",
+  "appId": "com.example.tetrio.app",
   "appName": "TETR.IO Hover Player",
   "webDir": "www",
   "server": {
-    "url": "https://tetr.io",
     "cleartext": true,
     "allowNavigation": [
       "tetr.io",
-      "*.tetr.io",
-      "localhost"
+      "*.tetr.io"
     ]
   }
 }
