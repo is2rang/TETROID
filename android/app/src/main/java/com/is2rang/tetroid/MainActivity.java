@@ -95,13 +95,13 @@ public class MainActivity extends BridgeActivity {
                "}" +
 
                // 3. 기호 전용 토글 버튼 생성 (언제나 독립 배치)
-               "var toggleBtn = document.getElementById('tetroid-toggle-btn');" +
-               "if (!toggleBtn) {" +
-               "  toggleBtn = document.createElement('div');" +
-               "  toggleBtn.id = 'tetroid-toggle-btn';" +
-               "  toggleBtn.innerText = window.isPadEnabled ? '●' : '○';" +
-               "  root.appendChild(toggleBtn);" +
-               "}" +
+               "  var toggleBtn = document.getElementById('tetroid-toggle-btn');" +
+               "  if (!toggleBtn) {" +
+               "    toggleBtn = document.createElement('div');" +
+               "    toggleBtn.id = 'tetroid-toggle-btn';" +
+               "    toggleBtn.innerText = window.isPadEnabled ? '●' : '○';" +
+               "    document.body.appendChild(toggleBt);" + // documentElement 대신 body에 붙임
+               "  }" +
 
                // 4. KeyboardEvent 기반 입력 발생 함수
                "function sendKeyEvent(type, keyCode, keyName) {" +
@@ -192,22 +192,21 @@ public class MainActivity extends BridgeActivity {
                "bindHoverControls();" +
 
                // 8. 무적 감시자 (상태변수 window.isPadEnabled가 true일 때만 강제 재생성 유도)
-               "if (!window.tetroidObserver) {" +
                "  window.tetroidObserver = new MutationObserver(function() {" +
-               "    var currentRoot = document.documentElement;" +
-               "    if (currentRoot) {" +
+               "    var body = document.body;" +
+               "    if (body) {" +
+               "      // 패드 재생성" +
                "      if (window.isPadEnabled && !document.getElementById('controller-overlay')) {" +
                "        var ovEl = createOverlayElement();" +
-               "        currentRoot.appendChild(ovEl);" +
+               "        body.appendChild(ovEl);" +
                "        bindHoverControls();" +
                "      }" +
+               "      // 토글 버튼 재생성 (이미 있으면 건드리지 않음)" +
                "      if (!document.getElementById('tetroid-toggle-btn')) {" +
-               "        currentRoot.appendChild(toggleBtn);" +
+               "        body.appendChild(toggleBtn);" +
                "      }" +
                "    }" +
                "  });" +
-               "  window.tetroidObserver.observe(document.documentElement, { childList: true, subtree: true });" +
-               "}" +
-               "})();";
+               "  window.tetroidObserver.observe(document.body, { childList: true, subtree: true });"
     }
 }
