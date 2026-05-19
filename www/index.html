@@ -3,96 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>TETR.IO Hover Player</title>
+  <title>TETR.IO Injection Loader</title>
   <style>
-    body, html {
-      margin: 0; padding: 0; width: 100%; height: 100%;
-      overflow: hidden; background-color: #000;
-      -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
-    }
-
-    #game-frame {
-      width: 100%; height: 100%; border: none;
-      position: absolute; top: 0; left: 0; z-index: 1;
-    }
-
-    /* 최상위 터치 수신 레이어: 호버 구현을 위해 모든 터치 이벤트를 이 컨테이너가 독점합니다. */
-    #touch-overlay {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      z-index: 999; pointer-events: auto; touch-action: none;
-    }
-
-    /* 가상 버튼 기본 스타일 (렌더링 부하 최소화를 위해 단순화) */
-    .hover-btn {
-      position: absolute; width: 70px; height: 70px;
-      background: rgba(255, 255, 255, 0.15);
-      border: 2px solid rgba(255, 255, 255, 0.4);
-      border-radius: 50%; color: #fff; font-weight: bold;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px; pointer-events: none; /* 개별 버튼은 터치 이벤트를 가로채지 않음 */
-      box-sizing: border-box;
-      transition: background 0.1s, transform 0.1s;
-    }
-
-    /* 호버(활성화) 상태일 때 시각 효과 */
-    .hover-btn.active {
-      background: rgba(0, 255, 200, 0.5);
-      border-color: rgba(0, 255, 200, 0.8);
-      transform: scale(1.05);
-    }
-
-    /* 대각선 복합 버튼 스타일 */
-    .hover-btn.combo {
-      width: 60px; height: 60px;
-      background: rgba(255, 200, 0, 0.15);
-      font-size: 12px;
-    }
-    .hover-btn.combo.active {
-      background: rgba(255, 200, 0, 0.5);
-    }
-
-    /* --- 버튼 배치 (가로 모드 기준 하단 양손 조작 최적화) --- */
-    
-    /* 왼쪽 조작부 (이동 및 대각선) */
-    #btn-left        { bottom: 90px; left: 20px; }
-    #btn-right       { bottom: 90px; left: 160px; }
-    #btn-soft        { bottom: 20px; left: 90px; }
-    #btn-left-soft   { bottom: 25px; left: 25px; }  /* Left + Soft */
-    #btn-right-soft  { bottom: 25px; left: 155px; } /* Right + Soft */
-
-    /* 오른쪽 조작부 (회전 및 액션) */
-    #btn-ccw         { bottom: 30px; right: 170px; } /* Z */
-    #btn-cw          { bottom: 95px; right: 110px; } /* Up */
-    #btn-180         { bottom: 160px; right: 170px; } /* Shift */
-    #btn-hard        { bottom: 30px; right: 30px; }  /* Space */
-    
-    /* 상단 유틸리티 */
-    #btn-hold        { top: 20px; right: 20px; width: 65px; height: 65px; } /* C */
+    body, html { margin: 0; padding: 0; background: #000; width: 100%; height: 100%; overflow: hidden; }
   </style>
 </head>
 <body>
-
-  <iframe id="game-frame" src="https://tetr.io/"></iframe>
-
-  <!-- 하나의 큰 터치 판넬이 모든 손가락의 호버(움직임)를 감지합니다 -->
-  <div id="touch-overlay">
-    <!-- 단일 키 버튼 (data-key) -->
-    <div id="btn-left" class="hover-btn" data-key="ArrowLeft">◀</div>
-    <div id="btn-right" class="hover-btn" data-key="ArrowRight">▶</div>
-    <div id="btn-soft" class="hover-btn" data-key="ArrowDown">▼</div>
-    
-    <!-- 복합 키 버튼 (data-combo로 두 개의 키를 공백 분리하여 지정) -->
-    <div id="btn-left-soft" class="hover-btn combo" data-combo="ArrowLeft ArrowDown">◀▼</div>
-    <div id="btn-right-soft" class="hover-btn combo" data-combo="ArrowLeft ArrowDown">▶▼</div>
-    
-    <div id="btn-ccw" class="hover-btn" data-key="z">CCW</div>
-    <div id="btn-cw" class="hover-btn" data-key="ArrowUp">CW</div>
-    <div id="btn-180" class="hover-btn" data-key="a">180</div> <!-- 기본 180도 회전은 주로 'A'나 'Shift' 사용 -->
-    <div id="btn-hard" class="hover-btn" data-key=" ">HARD</div>
-    
-    <div id="btn-hold" class="hover-btn" data-key="c">HOLD</div>
-  </div>
-
+  <!-- 내부 백그라운드에서 실행되어 TETR.IO 원격 페이지에 코드를 찔러넣을 스크립트 로더 -->
   <script src="app.js"></script>
 </body>
 </html>
