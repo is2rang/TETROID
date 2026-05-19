@@ -12,7 +12,6 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 하드웨어 가속 활성화
         getWindow().setFlags(
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED, 
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
@@ -31,7 +30,7 @@ public class MainActivity extends BridgeActivity {
                         @Override
                         public void onProgressChanged(WebView view, int newProgress) {
                             super.onProgressChanged(view, newProgress);
-                            if (newProgress > 60) {
+                            if (newProgress > 40) {
                                 view.evaluateJavascript(getInjectJavascript(), null);
                             }
                         }
@@ -51,6 +50,25 @@ public class MainActivity extends BridgeActivity {
 
     private String getInjectJavascript() {
         return "javascript:(function() {" +
+               // [우회 핵심] 게임이 로드되기 전에 브라우저의 이벤트 리스너를 미리 가로챕니다.
+               "if (!window._tetrio_listeners) {" +
+               "  window._tetrio_listeners = [];" +
+               "  var originalAddEventListener = window.addEventListener;" +
+               "  window.addEventListener = function(type, listener, options) {" +
+               "    if (type === 'keydown' || type === 'keyup') {" +
+               "      window._tetrio_listeners.push({ type: type, listener: listener });" +
+               "    }" +
+               "    return originalAddEventListener.apply(this, arguments);" +
+               "  };" +
+               "  var originalDocAddEventListener = document.addEventListener;" +
+               "  document.addEventListener = function(type, listener, options) {" +
+               "    if (type === 'keydown' || type === 'keyup') {" +
+               "      window._tetrio_listeners.push({ type: type, listener: listener });" +
+               "    }" +
+               "    return originalDocAddEventListener.apply(this, arguments);" +
+               "  };" +
+               "}" +
+
                "if (document.getElementById('controller-overlay')) return;" +
                
                // 1. 스타일(CSS) 정의
@@ -78,34 +96,26 @@ public class MainActivity extends BridgeActivity {
                "<div id=\"btn-hard\" class=\"pad-btn\" data-code=\"32\" data-name=\"Space\">SPACE</div>" +
                "<div id=\"btn-hold\" class=\"pad-btn\" data-code=\"67\" data-name=\"KeyC\">HOLD</div>`;" +
 
-               // 3. [최적화 핵심] 완전 우회용 원시 키 입력 발생기 정의
-               "function sendKeyEvent(type, keyCode, keyName) {" +
-               // 포커스 강제 리턴 대상 지정: 게임 내부의 canvas 또는 맨 앞 요소 찾기
-               "  var gameCanvas = document.querySelector('canvas') || document.activeElement || document.body;" +
-               "  if (gameCanvas && typeof gameCanvas.focus === 'function') {" +
-               "    gameCanvas.focus();" + // [우회 1] 입력 전에 게임 메인 화면으로 포커스를 강제 이주 시킵니다.
+               // 3. [보안 우회] 가로챈 리스너에 다이렉트로 오브젝트 주입하는 함수
+               "function sendDirectInput(type, keyCode, keyName) {" +
+               "  var fakeEvent = { " +
+               "    type: type, " +
+               "    key: keyName, " +
+               "    code: keyName, " +
+               "    keyCode: keyCode, " +
+               "    which: keyCode, " +
+               "    bubbles: true, " +
+               "    cancelable: true, " +
+               "    isTrusted: true, " + // 보안 필터 우회 유도
+               "    preventDefault: function(){} " +
+               "  };" +
+               "  if (window._tetrio_listeners) {" +
+               "    window._tetrio_listeners.forEach(function(item) {" +
+               "      if (item.type === type) {" +
+               "        try { item.listener(fakeEvent); } catch(e) {}" +
+               "      }" +
+               "    });" +
                "  }" +
-               
-               // [우회 2] 최신 웹 표준 초기화 함수(initKeyboardEvent)를 사용하여 브라우저가 하드웨어 입력으로 오해하도록 모방
-               "  var event = new KeyboardEvent(type, {" +
-               "    key: keyName," +
-               "    code: keyName," +
-               "    keyCode: keyCode," +
-               "    which: keyCode," +
-               "    bubbles: true," +
-               "    cancelable: true," +
-               "    composed: true," +
-               "    view: window" +
-               "  });" +
-               
-               // 객체 변조 방어막 우회용 (TETR.IO 내부 라이브러리 인식 대응)
-               "  Object.defineProperty(event, 'keyCode', { get: function() { return keyCode; } });" +
-               "  Object.defineProperty(event, 'which', { get: function() { return keyCode; } });" +
-               
-               // 윈도우, 도큐먼트, 게임 화면 전체에 주입 신호를 동시에 난사합니다.
-               "  if (gameCanvas) gameCanvas.dispatchEvent(event);" +
-               "  document.dispatchEvent(event);" +
-               "  window.dispatchEvent(event);" +
                "}" +
 
                // 4. 정밀 좌표 히트테스트 기반 터치 감지 시스템
@@ -133,26 +143,25 @@ public class MainActivity extends BridgeActivity {
                "    }" +
                "  }" +
                
-               // 버튼 진입 처리 (keydown)
+               // 진입 (keydown -> 다이렉트 내부망 찌르기)
                "  currentActive.forEach(function(el) {" +
                "    if (!activeButtons.has(el)) {" +
                "      el.classList.add('active');" +
-               "      sendKeyEvent('keydown', parseInt(el.dataset.code), el.dataset.name);" +
+               "      sendDirectInput('keydown', parseInt(el.dataset.code), el.dataset.name);" +
                "    }" +
                "  });" +
                
-               // 버튼 이탈 처리 (keyup)
+               // 이탈 (keyup -> 다이렉트 내부망 찌르기)
                "  activeButtons.forEach(function(el) {" +
                "    if (!currentActive.has(el)) {" +
                "      el.classList.remove('active');" +
-               "      sendKeyEvent('keyup', parseInt(el.dataset.code), el.dataset.name);" +
+               "      sendDirectInput('keyup', parseInt(el.dataset.code), el.dataset.name);" +
                "    }" +
                "  });" +
                
                "  activeButtons = currentActive;" +
                "}" +
 
-               // 이벤트 연결
                "function bindHoverControls() {" +
                "  var overlayEl = document.getElementById('controller-overlay');" +
                "  if (overlayEl) {" +
@@ -163,12 +172,12 @@ public class MainActivity extends BridgeActivity {
                "  }" +
                "}" +
 
-               // 5. 최초 실행 및 구조 안착
+               // 5. 구조 안착
                "var targetBody = document.body || document.documentElement;" +
                "targetBody.appendChild(overlay);" +
                "bindHoverControls();" +
 
-               // 6. 감시자 복구 로직 유지
+               // 6. 감시자
                "var observer = new MutationObserver(function() {" +
                "  if (!document.getElementById('controller-overlay')) {" +
                "    targetBody.appendChild(overlay);" +
