@@ -1,6 +1,12 @@
 {
-  "appId": "com.lovely.tetroid",
+  "appId": "com.is2rang.tetroid",
   "appName": "TETROID",
   "webDir": "www",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "server": {
+    "allowNavigation": [
+      "tetr.io",
+      "*.tetr.io"
+    ]
+  }
 }

@@ -5,145 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TETROID</title>
     <style>
-        * {
-            box-sizing: border-box;
-            -webkit-user-select: none;
-            user-select: none;
-            -webkit-touch-callout: none;
-        }
         body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: #000;
-            font-family: sans-serif;
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #000;
         }
-
-        /* 게임 화면 메인 주소로 꽉 채우기 */
-        #game-frame {
-            width: 100%;
-            height: 100%;
-            border: none;
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 1;
+        /* 로딩 중 안내 문구 */
+        #loading-text {
+            color: #fff; text-align: center; font-family: sans-serif;
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); font-size: 18px;
         }
-
-        /* 가상 컨트롤러 레이어 */
-        #controller-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 2;
-            pointer-events: none;
-        }
-
-        /* 버튼 디자인 */
-        .pad-btn {
-            position: absolute;
-            width: 75px;
-            height: 75px;
-            background: rgba(255, 255, 255, 0.25);
-            border: 2px solid rgba(255, 255, 255, 0.45);
-            border-radius: 50%;
-            color: white;
-            font-weight: bold;
-            font-size: 18px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            pointer-events: auto;
-            touch-action: none; /* 스마트폰 기본 브라우저 제스처 방지 */
-        }
-        
-        .pad-btn:active {
-            background: rgba(255, 255, 255, 0.6);
-            transform: scale(0.92);
-        }
-
-        /* 버튼 배치 조정 */
-        #btn-left  { bottom: 110px; left: 40px; }
-        #btn-right { bottom: 110px; left: 170px; }
-        #btn-soft  { bottom: 30px;  left: 105px; }
-        
-        #btn-ccw   { bottom: 110px; right: 170px; } /* Z 키 (반시계) */
-        #btn-cw    { bottom: 190px; right: 105px; } /* X 키 (시계) */
-        #btn-hard  { bottom: 110px; right: 40px; background: rgba(255, 50, 50, 0.4); border-color: rgba(255, 100, 100, 0.6); } /* 스페이스바 (하드드롭) */
-        
-        #btn-hold  { top: 40px; left: 40px; width: 65px; height: 65px; font-size: 14px; background: rgba(50, 150, 255, 0.4); } /* C 키 (홀드) */
     </style>
 </head>
 <body>
 
-    <!-- 주소 정확하게 수정 완료! -->
-    <iframe id="game-frame" src="https://tetr.io"></iframe>
-
-    <div id="controller-overlay">
-        <!-- 왼쪽 이동부 -->
-        <div id="btn-left" class="pad-btn">◀</div>
-        <div id="btn-right" class="pad-btn">▶</div>
-        <div id="btn-soft" class="pad-btn">▼</div>
-
-        <!-- 오른쪽 회전/드롭부 -->
-        <div id="btn-ccw" class="pad-btn">Z</div>
-        <div id="btn-cw" class="pad-btn">X</div>
-        <div id="btn-hard" class="pad-btn">SPACE</div>
-
-        <!-- 유틸리티 -->
-        <div id="btn-hold" class="pad-btn">HOLD</div>
-    </div>
+    <div id="loading-text">TETR.IO 시스템 우회 접속 중...</div>
 
     <script>
-        const iframe = document.getElementById('game-frame');
-
-        // 가상 버튼을 눌렀을 때 iframe 안의 TETR.IO로 키보드 신호를 주입하는 함수
-        function sendKeyEvent(type, keyCode, keyName) {
-            if (iframe && iframe.contentWindow) {
-                const event = new KeyboardEvent(type, {
-                    key: keyName,
-                    code: keyName,
-                    keyCode: keyCode,
-                    which: keyCode,
-                    bubbles: true,
-                    cancelable: true
-                });
-                iframe.contentWindow.dispatchEvent(event);
-            }
-        }
-
-        // 각 가상 버튼과 실제 TETR.IO 기본 키 매핑 설정
-        const buttonConfig = [
-            { id: 'btn-left',  code: 37, name: 'ArrowLeft' },
-            { id: 'btn-right', code: 39, name: 'ArrowRight' },
-            { id: 'btn-soft',  code: 40, name: 'ArrowDown' },
-            { id: 'btn-hard',  code: 32, name: 'Space' },
-            { id: 'btn-cw',    code: 88, name: 'KeyX' },  // X 키
-            { id: 'btn-ccw',   code: 90, name: 'KeyY' },  // Z 키 (TETR.IO 기본값 대응)
-            { id: 'btn-hold',  code: 67, name: 'KeyC' }   // C 키
-        ];
-
-        // 터치 이벤트 바인딩 (모바일 환경 딜레이 최소화)
-        buttonConfig.forEach(btn => {
-            const element = document.getElementById(btn.id);
-            if (element) {
-                // 버튼을 누를 때 (KeyDown)
-                element.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    sendKeyEvent('keydown', btn.code, btn.name);
-                });
-                
-                // 버튼에서 손을 뗄 때 (KeyUp)
-                element.addEventListener('touchend', (e) => {
-                    e.preventDefault();
-                    sendKeyEvent('keyup', btn.code, btn.name);
-                });
-            }
-        });
+        // 앱이 켜지면 iframe 차단을 피해 TETR.IO로 직접 화면을 리다이렉트합니다.
+        window.location.href = "https://tetr.io";
     </script>
 </body>
 </html>
