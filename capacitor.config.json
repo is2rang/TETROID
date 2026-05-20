@@ -1,9 +1,13 @@
-{
-  "appId": "com.is2rang.tetroid",
-  "appName": "TETROID",
-  "webDir": "www",
-  "server": {
-    "url": "https://tetr.io/",
-    "cleartext": true
+import { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  appId: 'com.is2rang.tetroid',
+  appName: 'TETROID',
+  webDir: 'www',
+  server: {
+    url: 'https://tetr.io', // 앱이 켜지면 테트리오 사이트로 바로 접속하도록 설정
+    cleartext: true
   }
-}
+};
+
+export default config;

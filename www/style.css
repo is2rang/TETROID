@@ -1,40 +1,17 @@
-#virtual-gamepad {
+/* 주입할 CSS 스타일 */
+#custom-overlay {
     position: fixed;
-    bottom: 25px;
-    left: 0;
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
-    padding: 0 25px;
-    box-sizing: border-box;
-    z-index: 999999; /* 게임 화면보다 무조건 위에 오도록 고정 */
-    touch-action: none;
-    user-select: none;
-    -webkit-user-select: none;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    z-index: 99999;
+    pointer-events: none; /* 컨테이너 자체는 터치 통과 */
 }
-
-.d-pad, .action-pad {
-    display: flex;
-    gap: 12px;
+.pad-btn {
+    position: absolute;
+    width: 60px; height: 60px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid #fff;
+    pointer-events: auto; /* 버튼은 터치 감지 */
 }
-
-.ctrl-btn {
-    pointer-events: auto; /* 터치 활성화 */
-    width: 65px;
-    height: 65px;
-    background: rgba(255, 255, 255, 0.15);
-    color: #ffffff;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    font-weight: bold;
-    font-size: 16px;
-    outline: none;
-    -webkit-tap-highlight-color: transparent; /* 터치 시 안드로이드 노란 잔상 제거 */
-    transition: background 0.05s;
-}
-
-/* 버튼을 입력 중일 때의 피드백 */
-.ctrl-btn:active {
-    background: rgba(255, 255, 255, 0.5);
-    border-color: rgba(255, 255, 255, 0.7);
+.pad-btn.active {
+    background: rgba(255, 255, 0, 0.6); /* 눌렸을 때 피드백 */
 }
