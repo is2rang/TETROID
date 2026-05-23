@@ -1,4 +1,4 @@
-package com.yourdomain.tetriomobile;
+package com.is2rang.tetroid;
 
 import android.graphics.Color;
 import android.os.Bundle;
