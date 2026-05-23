@@ -1,17 +1,16 @@
 {
-  "name": "tetroid",
+  "name": "TETROID",
   "version": "1.0.0",
-  "description": "TETR.IO fan-made controller",
+  "description": "TETR.IO Mobile Player with Native Overlay",
   "main": "index.js",
-  "scripts": {
-    "build": "echo 'Build process handled by GitHub Actions'",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "dependencies": {
-    "@capacitor/core": "^6.0.0",
-    "@capacitor/cli": "^6.0.0",
-    "@capacitor/android": "^6.0.0"
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/core": "^6.0.0"
   },
-  "author": "",
-  "license": "ISC"
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0"
+  },
+  "scripts": {
+    "build": "echo 'No local build step needed'"
+  }
 }
