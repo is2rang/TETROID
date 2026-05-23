@@ -20,24 +20,23 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // [크래시 방지 핵심] 
-        // Capacitor 내부 웹뷰 화면 빌드가 완전히 끝나서 메인 화면(DecorView)이 활성화된 직후 
-        // 안전하게 네이티브 오버레이 버튼을 그리도록 대기열(post)에 등록합니다.
+        // 안드로이드 시스템이 웹뷰 화면 레이아웃을 완전히 준비한 직후(post) 
+        // 안전하게 그 위에 네이티브 오버레이 버튼들을 얹도록 대기열에 등록합니다.
         getWindow().getDecorView().post(new Runnable() {
             @Override
             public void run() {
                 try {
                     setupNativeOverlay();
                 } catch (Exception e) {
-                    Log.e(TAG, "오버레이 주입 중 오류 발생: " + e.getMessage(), e);
+                    Log.e(TAG, "오버레이 레이어 생성 중 크래시 방지 작동: " + e.getMessage(), e);
                 }
             }
         });
     }
 
-    // 네이티브 오버레이 레이아웃을 생성하고 배치하는 메인 함수
+    // 웹뷰 화면 위에 투명한 네이티브 레이어를 생성하고 버튼들을 배치하는 함수
     private void setupNativeOverlay() {
-        // 1. 버튼들을 얹을 전체 화면 크기의 투명 오버레이 레이아웃 생성
+        // 1. 전체 화면을 덮는 투명한 베이스 레이아웃 (FrameLayout)
         FrameLayout overlayLayout = new FrameLayout(this);
         FrameLayout.LayoutParams overlayParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -45,18 +44,18 @@ public class MainActivity extends BridgeActivity {
         );
         overlayLayout.setLayoutParams(overlayParams);
 
-        // 2. 하단에 배치할 버튼 컨테이너 (반투명 검은색 바 형태)
+        // 2. 화면 하단에 고정될 버튼 컨테이너 바 (반투명 어두운 배경)
         LinearLayout buttonContainer = new LinearLayout(this);
         buttonContainer.setOrientation(LinearLayout.HORIZONTAL);
         FrameLayout.LayoutParams containerParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                dpToPx(120) // 바의 높이: 120dp
+                dpToPx(130) // 버튼 바의 세로 높이: 130dp (모바일 조작 편의를 위해 소폭 확장)
         );
         containerParams.gravity = Gravity.BOTTOM;
         buttonContainer.setLayoutParams(containerParams);
-        buttonContainer.setBackgroundColor(Color.parseColor("#44000000")); // 투명도 25% 검은색
+        buttonContainer.setBackgroundColor(Color.parseColor("#55000000")); // 투명도 약 33% 검은색
 
-        // 3. 왼쪽 구역 레이아웃 (좌/우 이동 버튼 배치)
+        // 3. 왼쪽 조작 구역 (좌/우 이동 버튼 배치)
         LinearLayout leftLayout = new LinearLayout(this);
         leftLayout.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams leftParams = new LinearLayout.LayoutParams(
@@ -67,7 +66,7 @@ public class MainActivity extends BridgeActivity {
         leftLayout.setLayoutParams(leftParams);
         leftLayout.setGravity(Gravity.CENTER);
 
-        // 4. 오른쪽 구역 레이아웃 (회전/하드드롭 버튼 배치)
+        // 4. 오른쪽 조작 구역 (회전/하드드롭 버튼 배치)
         LinearLayout rightLayout = new LinearLayout(this);
         rightLayout.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(
@@ -78,46 +77,49 @@ public class MainActivity extends BridgeActivity {
         rightLayout.setLayoutParams(rightParams);
         rightLayout.setGravity(Gravity.CENTER);
 
-        // 5. 게임 컨트롤 버튼 정의 (텍스트, 키코드, 자바스크립트 키 이름)
+        // 5. 게임 플레이에 필요한 가상 키보드 매핑 버튼 4개 생성
+        // (텍스트, 키코드, TETR.IO 표준 자바스크립트 키코드 문자열)
         Button btnLeft = createGameButton("◀", 37, "ArrowLeft");
         Button btnRight = createGameButton("▶", 39, "ArrowRight");
         Button btnRotate = createGameButton("↻", 38, "ArrowUp");
         Button btnHardDrop = createGameButton("▼", 32, "Space");
 
-        // 6. 레이아웃 계층 조립하기
+        // 6. 생성된 가상 버튼들을 좌/우 구역 레이아웃에 각각 조립
         leftLayout.addView(btnLeft);
         leftLayout.addView(btnRight);
         rightLayout.addView(btnRotate);
         rightLayout.addView(btnHardDrop);
 
+        // 7. 좌/우 구역을 하단 전체 컨테이너에 결합
         buttonContainer.addView(leftLayout);
         buttonContainer.addView(rightLayout);
         overlayLayout.addView(buttonContainer);
 
-        // 7. 안드로이드 시스템 최상단 윈도우에 오버레이를 안전하게 누적 추가
+        // 8. Capacitor 웹뷰 위에 안드로이드 네이티브 화면을 완전히 겹쳐서 띄우기 (addContentView)
         addContentView(overlayLayout, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
 
-        Log.d(TAG, "네이티브 오버레이 화면에 성공적으로 로드됨.");
+        Log.d(TAG, "네이티브 가상 버튼 레이어가 성공적으로 화면에 부착되었습니다.");
     }
 
-    // 버튼을 생성하고 터치 이벤트를 바인딩하는 헬퍼 함수
+    // 공통 버튼 속성 정의 및 실시간 터치 감지(멀티터치/반응속도 최적화) 헬퍼 함수
     private Button createGameButton(String text, final int keyCode, final String keyName) {
         Button button = new Button(this);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                dpToPx(70), // 버튼 너비 70dp
-                dpToPx(70)  // 버튼 높이 70dp
+                dpToPx(75), // 버튼 너비 75dp
+                dpToPx(75)  // 버튼 높이 75dp
         );
-        params.setMargins(dpToPx(6), dpToPx(6), dpToPx(6), dpToPx(6));
+        params.setMargins(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8));
         button.setLayoutParams(params);
         button.setText(text);
-        button.setTextSize(22);
-        button.setBackgroundColor(Color.parseColor("#88FFFFFF")); // 기본 반투명 흰색
+        button.setTextSize(24);
+        button.setPadding(0, 0, 0, 0);
+        button.setBackgroundColor(Color.parseColor("#77FFFFFF")); // 기본 반투명 흰색 기본값
         button.setTextColor(Color.BLACK);
 
-        // 터치 동작 감지 (눌렀을 때 keydown, 뗐을 때 keyup)
+        // 터치 동작 감지 (모바일 터치 딜레이를 완벽하게 없애기 위해 OnTouchListener 사용)
         button.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -125,12 +127,16 @@ public class MainActivity extends BridgeActivity {
                 WebView webView = getBridge().getWebView();
                 if (webView == null) return false;
 
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    v.setBackgroundColor(Color.parseColor("#CCFFFFFF")); // 누르면 더 진해짐
+                int action = event.getAction();
+                
+                if (action == MotionEvent.ACTION_DOWN) {
+                    // 버튼을 누르는 순간 즉시 색상을 진하게 바꾸고 keydown 이벤트 전송
+                    v.setBackgroundColor(Color.parseColor("#BBFFFFFF"));
                     sendKeyEvent(webView, "keydown", keyCode, keyName);
                     return true;
-                } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-                    v.setBackgroundColor(Color.parseColor("#88FFFFFF")); // 떼면 원래대로
+                } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    // 손가락을 떼거나 화면 밖으로 벗어나면 원래 투명도로 돌리고 keyup 이벤트 전송
+                    v.setBackgroundColor(Color.parseColor("#77FFFFFF"));
                     sendKeyEvent(webView, "keyup", keyCode, keyName);
                     return true;
                 }
@@ -141,7 +147,7 @@ public class MainActivity extends BridgeActivity {
         return button;
     }
 
-    // 웹뷰 내부의 TETR.IO 화면으로 가상 키보드 신호를 주입하는 함수
+    // 안드로이드 시스템 터치를 웹뷰 내부의 TETR.IO 순수 자바스크립트 키보드 신호로 강제 변환 및 전송하는 함수
     private void sendKeyEvent(final WebView webView, final String action, final int keyCode, final String keyName) {
         final String js = "document.dispatchEvent(new KeyboardEvent('" + action + "', {" +
                 "key: '" + keyName + "', " +
@@ -152,6 +158,7 @@ public class MainActivity extends BridgeActivity {
                 "cancelable: true" +
                 "}));";
         
+        // 안드로이드 메인 UI 스레드 안전성 보장을 위해 포스트 방식으로 주입 실행
         webView.post(new Runnable() {
             @Override
             public void run() {
@@ -160,7 +167,7 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
-    // 스마트폰 해상도 대응을 위한 dp단위 -> 픽셀 변환 함수
+    // 디바이스의 화면 해상도에 맞추어 dp 단위 크기를 실제 화면 픽셀(Pixel)로 자동 연산해주는 함수
     private int dpToPx(int dp) {
         return (int) (dp * getResources().getDisplayMetrics().density);
     }
