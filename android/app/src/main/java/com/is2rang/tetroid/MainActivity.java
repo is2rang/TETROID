@@ -24,27 +24,30 @@ import java.util.List;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "TetrioMobile";
-    private static final int GRID_SIZE_DP = 10; // 10dp 그리드 격자 스냅 단위
-    private static final String PREFS_NAME = "TetroidCustomPadPrefs"; // 레이아웃 영구 저장 파일명
+    private static final int GRID_SIZE_DP = 10; 
+    private static final String PREFS_NAME = "TetroidCustomPadPrefs"; 
 
     // 시스템 상태 제어 플래그
     private boolean isPadVisible = true; 
     private boolean isEditMode = false;
     private GameButton selectedButton = null;
     
-    // 순수 인게임 조작 버튼(10키)만 관리하는 리스트 (ESC, R은 제외)
+    // 최적화: 캐싱된 조작 버튼 리스트 (고성능 루프 플래닝용)
     private final List<GameButton> gameButtons = new ArrayList<>();
     
+    // 최적화: 디스플레이 밀도 값 전역 캐싱 (dpToPx 연산 비용 절감)
+    private float displayDensity;
+
     // 탑 유틸리티 컴포넌트
     private LinearLayout sizeBar;
     private TextView tvScale;
     private Button btnEditToggle;
     private Button btnVisibilityToggle;
 
-    // 인게임 10키 전용 확장형 커스텀 버튼 클래스
     private class GameButton extends androidx.appcompat.widget.AppCompatButton {
         final int[] androidKeyCodes; 
         boolean isCurrentPressed = false; 
+        boolean tempHovered = false; // 최적화: 매 프레임 할당을 없애기 위한 내부 상태 플래그
         
         int baseWidthDp;
         int baseHeightDp;
@@ -72,6 +75,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // 밀도 가중치 사전 캐싱
+        displayDensity = getResources().getDisplayMetrics().density;
 
         try {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
@@ -115,7 +121,7 @@ public class MainActivity extends BridgeActivity {
         ));
         combinedPad.setBackgroundColor(Color.parseColor("#11000000")); 
 
-        // 1. [좌측 상단 고정] UI 상태 토글 스위치 (●: 켜짐 / ○: 꺼짐)
+        // 1. UI 상태 토글 스위치
         btnVisibilityToggle = new Button(this);
         btnVisibilityToggle.setText("●");
         FrameLayout.LayoutParams visParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(45));
@@ -126,7 +132,7 @@ public class MainActivity extends BridgeActivity {
         btnVisibilityToggle.setTextColor(Color.WHITE);
         btnVisibilityToggle.setTextSize(16);
 
-        // 2. [고정 유틸] ESC 버튼 (드래그/스케일 제외, 위치 고정)
+        // 2. ESC 고정 버튼
         final Button btnEsc = new Button(this);
         btnEsc.setText("ESC");
         FrameLayout.LayoutParams escParams = new FrameLayout.LayoutParams(dpToPx(55), dpToPx(45));
@@ -137,7 +143,7 @@ public class MainActivity extends BridgeActivity {
         btnEsc.setTextColor(Color.WHITE);
         btnEsc.setTextSize(11);
 
-        // 3. [고정 유틸] R 버튼 (드래그/스케일 제외, 위치 고정)
+        // 3. R 고정 버튼
         final Button btnR = new Button(this);
         btnR.setText("R");
         FrameLayout.LayoutParams rParams = new FrameLayout.LayoutParams(dpToPx(55), dpToPx(45));
@@ -148,7 +154,7 @@ public class MainActivity extends BridgeActivity {
         btnR.setTextColor(Color.WHITE);
         btnR.setTextSize(14);
 
-        // 고정 유틸 버튼 전용 터치 리스너 (딜레이 없는 즉시 웹뷰 입력 주입)
+        // 고정 버튼 터치 최적화: UI 스레드 직통 발송으로 연산 지연 완전히 제거
         View.OnTouchListener utilityTouchListener = new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -156,11 +162,12 @@ public class MainActivity extends BridgeActivity {
                 WebView webView = getBridge().getWebView();
                 int keyCode = (v == btnEsc) ? KeyEvent.KEYCODE_ESCAPE : KeyEvent.KEYCODE_R;
 
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                int action = event.getAction();
+                if (action == MotionEvent.ACTION_DOWN) {
                     v.setBackgroundColor(Color.parseColor("#88FFFFFF"));
                     sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, keyCode);
                     return true;
-                } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                     v.setBackgroundColor(Color.parseColor("#CC222222"));
                     sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, keyCode);
                     return true;
@@ -171,7 +178,7 @@ public class MainActivity extends BridgeActivity {
         btnEsc.setOnTouchListener(utilityTouchListener);
         btnR.setOnTouchListener(utilityTouchListener);
 
-        // 4. [우측 상단 고정] Edit / Save 제어 토글 버튼
+        // 4. Edit / Save 제어 토글 버튼
         btnEditToggle = new Button(this);
         btnEditToggle.setText("Edit");
         FrameLayout.LayoutParams toggleParams = new FrameLayout.LayoutParams(dpToPx(100), dpToPx(45));
@@ -182,7 +189,7 @@ public class MainActivity extends BridgeActivity {
         btnEditToggle.setTextColor(Color.WHITE);
         btnEditToggle.setTextSize(15);
 
-        // 5. [상단 중앙] 크기 조절 세그먼트 바 (SizeBar)
+        // 5. 크기 조절 세그먼트 바
         sizeBar = new LinearLayout(this);
         sizeBar.setOrientation(LinearLayout.HORIZONTAL);
         sizeBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -223,7 +230,7 @@ public class MainActivity extends BridgeActivity {
         sizeBar.addView(tvScale);
         sizeBar.addView(btnPlus);
 
-        // 6. [순수 조작계 10키 생성 및 바인딩]
+        // 6. 인게임 조작계 10키 생성 및 바인딩
         GameButton btnLeft = createGameButton("◀", new int[]{KeyEvent.KEYCODE_DPAD_LEFT}, 70, 70);
         GameButton btnSoftDrop = createGameButton("▼", new int[]{KeyEvent.KEYCODE_DPAD_DOWN}, 70, 70);
         GameButton btnRight = createGameButton("▶", new int[]{KeyEvent.KEYCODE_DPAD_RIGHT}, 70, 70);
@@ -236,7 +243,7 @@ public class MainActivity extends BridgeActivity {
         GameButton btnRotate180 = createGameButton("180", new int[]{KeyEvent.KEYCODE_A}, 70, 70); 
         GameButton btnHardDrop = createGameButton("DROP", new int[]{KeyEvent.KEYCODE_SPACE}, 90, 70);
 
-        // 7. [영구 저장 데이터 연동 레이아웃 빌더]
+        // 7. 레이아웃 데이터 로드 및 초기 마진 설정
         initAndLoadButtonLayout(btnLeft, Gravity.BOTTOM | Gravity.LEFT, 20, 20 + 70 + 10);
         initAndLoadButtonLayout(btnSoftDrop, Gravity.BOTTOM | Gravity.LEFT, 20 + 70 + 10, 20 + 70 + 10);
         initAndLoadButtonLayout(btnRight, Gravity.BOTTOM | Gravity.LEFT, 20 + 70 + 10 + 70 + 10, 20 + 70 + 10);
@@ -249,7 +256,6 @@ public class MainActivity extends BridgeActivity {
         initAndLoadButtonLayout(btnRotate180, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10, 20 + 70 + 10);
         initAndLoadButtonLayout(btnHold, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10 + 70 + 10, 20 + 70 + 10);
 
-        // 부모 레이아웃에 탑재
         combinedPad.addView(btnLeft);
         combinedPad.addView(btnSoftDrop);
         combinedPad.addView(btnRight);
@@ -267,17 +273,15 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addView(btnVisibilityToggle);
         combinedPad.addView(sizeBar);
 
-        // 코어 비즈니스 엔진 구동
-        setupIntegratedHoverEngine(combinedPad);
+        setupOptimizedHoverEngine(combinedPad);
         setupEditModeInteraction(combinedPad);
 
-        // [관통 스위치 리스너] 고정 버튼인 ESC와 R도 다른 조작키들과 함께 깔끔히 ON/OFF 처리
         btnVisibilityToggle.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 isPadVisible = !isPadVisible;
                 if (!isPadVisible) {
-                    btnVisibilityToggle.setText("○"); // 꺼짐 심볼 동기화
+                    btnVisibilityToggle.setText("○"); 
                     btnVisibilityToggle.setBackgroundColor(Color.parseColor("#CC0055AA")); 
                     combinedPad.setBackgroundColor(Color.TRANSPARENT); 
                     
@@ -291,25 +295,26 @@ public class MainActivity extends BridgeActivity {
                             selectedButton = null;
                         }
                     }
-                    clearHoverOperationalStates(combinedPad);
+                    clearHoverOperationalStates();
 
-                    // ● 마크를 제외한 고정 유틸 버튼(ESC, R), Edit 버튼, 10키 패드를 모두 숨김 처리
                     btnEditToggle.setVisibility(View.GONE);
                     btnEsc.setVisibility(View.GONE);
                     btnR.setVisibility(View.GONE);
-                    for (GameButton btn : gameButtons) {
-                        btn.setVisibility(View.GONE);
+                    
+                    // 최적화: 무거운 계층 탐색 대신 리스트 직접 순회로 뷰 가시성 제어
+                    for (int i = 0; i < gameButtons.size(); i++) {
+                        gameButtons.get(i).setVisibility(View.GONE);
                     }
                 } else {
-                    btnVisibilityToggle.setText("●"); // 켜짐 심볼 동기화
+                    btnVisibilityToggle.setText("●"); 
                     btnVisibilityToggle.setBackgroundColor(Color.parseColor("#CC222222"));
                     combinedPad.setBackgroundColor(Color.parseColor("#11000000"));
 
                     btnEditToggle.setVisibility(View.VISIBLE);
                     btnEsc.setVisibility(View.VISIBLE);
                     btnR.setVisibility(View.VISIBLE);
-                    for (GameButton btn : gameButtons) {
-                        btn.setVisibility(View.VISIBLE);
+                    for (int i = 0; i < gameButtons.size(); i++) {
+                        gameButtons.get(i).setVisibility(View.VISIBLE);
                     }
                 }
             }
@@ -338,12 +343,12 @@ public class MainActivity extends BridgeActivity {
         rootView.addView(combinedPad);
     }
 
-    // SharedPreferences 영구 저장 처리 로직
     private void executeSaveCurrentLayouts() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
 
-        for (GameButton btn : gameButtons) {
+        for (int i = 0; i < gameButtons.size(); i++) {
+            GameButton btn = gameButtons.get(i);
             String key = btn.getText().toString();
             FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) btn.getLayoutParams();
             
@@ -355,10 +360,8 @@ public class MainActivity extends BridgeActivity {
             editor.putFloat(key + "_scaleFactor", btn.scaleFactor);
         }
         editor.apply();
-        Log.d(TAG, "10키 배치가 SharedPreferences 로컬 기기에 세이브되었습니다.");
     }
 
-    // 데이터 로드 및 마진 규격 매칭 프로세서
     private void initAndLoadButtonLayout(GameButton btn, int defaultGravity, int marginXDp, int marginYDp) {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String key = btn.getText().toString();
@@ -408,39 +411,36 @@ public class MainActivity extends BridgeActivity {
                 FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) btn.getLayoutParams();
                 int gridSizePx = dpToPx(GRID_SIZE_DP);
 
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        executeButtonSelection(btn);
-                        startX = event.getRawX();
-                        startY = event.getRawY();
-                        initLeft = lp.leftMargin;
-                        initBottom = lp.bottomMargin;
-                        initRight = lp.rightMargin;
-                        initTop = lp.topMargin;
-                        break;
+                int action = event.getAction();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    executeButtonSelection(btn);
+                    startX = event.getRawX();
+                    startY = event.getRawY();
+                    initLeft = lp.leftMargin;
+                    initBottom = lp.bottomMargin;
+                    initRight = lp.rightMargin;
+                    initTop = lp.topMargin;
+                } else if (action == MotionEvent.ACTION_MOVE) {
+                    float diffX = event.getRawX() - startX;
+                    float diffY = event.getRawY() - startY;
 
-                    case MotionEvent.ACTION_MOVE:
-                        float diffX = event.getRawX() - startX;
-                        float diffY = event.getRawY() - startY;
+                    if ((lp.gravity & Gravity.LEFT) == Gravity.LEFT) {
+                        int targetLeft = initLeft + (int) diffX;
+                        lp.leftMargin = (targetLeft / gridSizePx) * gridSizePx;
+                    } else if ((lp.gravity & Gravity.RIGHT) == Gravity.RIGHT) {
+                        int targetRight = initRight - (int) diffX;
+                        lp.rightMargin = (targetRight / gridSizePx) * gridSizePx;
+                    }
 
-                        if ((lp.gravity & Gravity.LEFT) == Gravity.LEFT) {
-                            int targetLeft = initLeft + (int) diffX;
-                            lp.leftMargin = Math.round((float) targetLeft / gridSizePx) * gridSizePx;
-                        } else if ((lp.gravity & Gravity.RIGHT) == Gravity.RIGHT) {
-                            int targetRight = initRight - (int) diffX;
-                            lp.rightMargin = Math.round((float) targetRight / gridSizePx) * gridSizePx;
-                        }
+                    if ((lp.gravity & Gravity.BOTTOM) == Gravity.BOTTOM) {
+                        int targetBottom = initBottom - (int) diffY;
+                        lp.bottomMargin = (targetBottom / gridSizePx) * gridSizePx;
+                    } else if ((lp.gravity & Gravity.TOP) == Gravity.TOP) {
+                        int targetTop = initTop + (int) diffY;
+                        lp.topMargin = (targetTop / gridSizePx) * gridSizePx;
+                    }
 
-                        if ((lp.gravity & Gravity.BOTTOM) == Gravity.BOTTOM) {
-                            int targetBottom = initBottom - (int) diffY;
-                            lp.bottomMargin = Math.round((float) targetBottom / gridSizePx) * gridSizePx;
-                        } else if ((lp.gravity & Gravity.TOP) == Gravity.TOP) {
-                            int targetTop = initTop + (int) diffY;
-                            lp.topMargin = Math.round((float) targetTop / gridSizePx) * gridSizePx;
-                        }
-
-                        btn.setLayoutParams(lp);
-                        break;
+                    btn.setLayoutParams(lp);
                 }
                 return true; 
             }
@@ -467,7 +467,6 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    // Edit/Save 토글 제어 인터랙션
     private void setupEditModeInteraction(final FrameLayout pad) {
         btnEditToggle.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -483,19 +482,19 @@ public class MainActivity extends BridgeActivity {
                         selectedButton.setAlpha(1.0f);
                         selectedButton = null;
                     }
-                    executeSaveCurrentLayouts(); // 저장 메서드 가동
+                    executeSaveCurrentLayouts(); 
                 } else {
                     isEditMode = true;
                     btnEditToggle.setText("Save");
                     btnEditToggle.setBackgroundColor(Color.parseColor("#CC00AA00")); 
-                    clearHoverOperationalStates(pad);
+                    clearHoverOperationalStates();
                 }
             }
         });
     }
 
-    // 멀티터치 실시간 프레임 호버 엔진
-    private void setupIntegratedHoverEngine(final FrameLayout pad) {
+    // ⭐ [핵심 구현] 극한 최적화 처리된 초고속 멀티터치 실시간 호버 엔진
+    private void setupOptimizedHoverEngine(final FrameLayout pad) {
         pad.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -507,49 +506,50 @@ public class MainActivity extends BridgeActivity {
 
                 int action = event.getActionMasked();
                 int pointerCount = event.getPointerCount();
-                int childCount = pad.getChildCount();
+                int buttonSize = gameButtons.size();
 
-                boolean[] nextFrameStates = new boolean[childCount];
+                // 최적화 1: 매 프레임 발생하던 boolean[] 메모리 할당 제거 -> 내부 플래그 필드로 대체
+                for (int j = 0; j < buttonSize; j++) {
+                    gameButtons.get(j).tempHovered = false;
+                }
 
+                // 최적화 2: 무거운 pad.getChildAt() 계층 구조 순회 완전 제거 -> 평탄화된 캐싱 리스트 직접 대조
                 if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
+                    int actionIndex = event.getActionIndex();
                     for (int i = 0; i < pointerCount; i++) {
-                        if (action == MotionEvent.ACTION_POINTER_UP && i == event.getActionIndex()) {
+                        if (action == MotionEvent.ACTION_POINTER_UP && i == actionIndex) {
                             continue;
                         }
 
                         float x = event.getX(i);
                         float y = event.getY(i);
 
-                        for (int j = 0; j < childCount; j++) {
-                            View child = pad.getChildAt(j);
-                            if (child instanceof GameButton && child.getVisibility() == View.VISIBLE) {
-                                if (x >= child.getLeft() && x <= child.getRight() &&
-                                    y >= child.getTop() && y <= child.getBottom()) {
-                                    nextFrameStates[j] = true;
+                        for (int j = 0; j < buttonSize; j++) {
+                            GameButton btn = gameButtons.get(j);
+                            if (btn.getVisibility() == View.VISIBLE) {
+                                if (x >= btn.getLeft() && x <= btn.getRight() &&
+                                    y >= btn.getTop() && y <= btn.getBottom()) {
+                                    btn.tempHovered = true;
                                 }
                             }
                         }
                     }
                 }
 
-                for (int j = 0; j < childCount; j++) {
-                    View child = pad.getChildAt(j);
-                    if (child instanceof GameButton) {
-                        GameButton btn = (GameButton) child;
-                        boolean isCurrentlyHovered = nextFrameStates[j];
-
-                        if (isCurrentlyHovered && !btn.isCurrentPressed) {
-                            btn.isCurrentPressed = true;
-                            btn.setBackgroundColor(Color.parseColor("#BBFFFFFF"));
-                            for (int code : btn.androidKeyCodes) {
-                                sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
-                            }
-                        } else if (!isCurrentlyHovered && btn.isCurrentPressed) {
-                            btn.isCurrentPressed = false;
-                            btn.setBackgroundColor(Color.parseColor("#66FFFFFF"));
-                            for (int code : btn.androidKeyCodes) {
-                                sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
-                            }
+                // 최적화 3: 인풋 전송 시 .post(Runnable) 큐 거치지 않고 메인 UI 스레드에서 직접 네이티브 패킷 주입
+                for (int j = 0; j < buttonSize; j++) {
+                    GameButton btn = gameButtons.get(j);
+                    if (btn.tempHovered && !btn.isCurrentPressed) {
+                        btn.isCurrentPressed = true;
+                        btn.setBackgroundColor(Color.parseColor("#BBFFFFFF"));
+                        for (int code : btn.androidKeyCodes) {
+                            sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
+                        }
+                    } else if (!btn.tempHovered && btn.isCurrentPressed) {
+                        btn.isCurrentPressed = false;
+                        btn.setBackgroundColor(Color.parseColor("#66FFFFFF"));
+                        for (int code : btn.androidKeyCodes) {
+                            sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
                         }
                     }
                 }
@@ -558,37 +558,30 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
-    private void clearHoverOperationalStates(FrameLayout pad) {
+    private void clearHoverOperationalStates() {
         if (getBridge() == null || getBridge().getWebView() == null) return;
         WebView webView = getBridge().getWebView();
-        int childCount = pad.getChildCount();
-        for (int i = 0; i < childCount; i++) {
-            View v = pad.getChildAt(i);
-            if (v instanceof GameButton) {
-                GameButton btn = (GameButton) v;
-                if (btn.isCurrentPressed) {
-                    btn.isCurrentPressed = false;
-                    btn.setBackgroundColor(Color.parseColor("#66FFFFFF"));
-                    for (int code : btn.androidKeyCodes) {
-                        sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
-                    }
+        int buttonSize = gameButtons.size();
+        for (int i = 0; i < buttonSize; i++) {
+            GameButton btn = gameButtons.get(i);
+            if (btn.isCurrentPressed) {
+                btn.isCurrentPressed = false;
+                btn.setBackgroundColor(Color.parseColor("#66FFFFFF"));
+                for (int code : btn.androidKeyCodes) {
+                    sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
                 }
             }
         }
     }
 
-    private void sendNativeKeyEvent(final WebView webView, final int keyAction, final int androidKeyCode) {
-        webView.post(new Runnable() {
-            @Override
-            public void run() {
-                webView.requestFocus();
-                KeyEvent keyEvent = new KeyEvent(keyAction, androidKeyCode);
-                webView.dispatchKeyEvent(keyEvent);
-            }
-        });
+    // 최적화 4: 익명 객체(new Runnable) 생성을 제거하여 인풋 렉 및 가비지 수집 부하 최소화
+    private void sendNativeKeyEvent(WebView webView, int keyAction, int androidKeyCode) {
+        webView.requestFocus();
+        webView.dispatchKeyEvent(new KeyEvent(keyAction, androidKeyCode));
     }
 
+    // 최적화 5: 수시로 연산되던 밀도 연산을 전역 캐싱 데이터 곱셉 구조로 변경 (Math API 경량화)
     private int dpToPx(int dp) {
-        return (int) (dp * getResources().getDisplayMetrics().density);
+        return (int) (dp * displayDensity);
     }
 }
