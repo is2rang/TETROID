@@ -4,6 +4,7 @@
   "webDir": "www",
   "server": {
     "url": "https://tetr.io/",
-    "cleartext": true
+    "androidScheme": "https",
+    "allowMixedContent": true
   }
 }
