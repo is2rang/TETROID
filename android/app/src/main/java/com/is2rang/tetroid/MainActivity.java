@@ -604,9 +604,9 @@ public class MainActivity extends BridgeActivity {
 
             android.webkit.WebSettings settings = webView.getSettings();
             
-            // 2. V8 고성능 자바스크립트 가속 및 DOM 컴파일러 세팅 최적화
+            // 2. V8 고성능 자바스크립트 가속 및 DOM 컴파일러 세팅 최적화 (★ 대소문자 표기 수정 완료)
             settings.setJavaScriptEnabled(true);
-            settings.setDOMStorageEnabled(true); // TETR.IO 에셋 로컬 캐시 메모리 증설
+            settings.setDomStorageEnabled(true); // TETR.IO 에셋 로컬 캐시 메모리 증설
             settings.setDatabaseEnabled(true);
             
             // 3. 리소스 반복 다운로드로 인한 프레임 드랍 방지 (네트워크 스터터링 차단)
