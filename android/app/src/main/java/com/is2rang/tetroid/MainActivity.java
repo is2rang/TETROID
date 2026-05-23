@@ -21,31 +21,31 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "TetrioMobile";
-    private static final int GRID_SIZE_DP = 10; // 그리드 스냅 격자 크기
+    private static final int GRID_SIZE_DP = 10; // 10dp 그리드 격자 스냅
 
-    // 시스템 모드 제어 플래그
-    private boolean isPadVisible = true; // 패드 UI 노출 및 터치 작동 여부
+    // 모드 제어 플래그
+    private boolean isPadVisible = true; 
     private boolean isEditMode = false;
     private GameButton selectedButton = null;
     
-    // 상단 UI 컴포넌트 선언
+    // 탑 유틸리티 컴포넌트
     private LinearLayout sizeBar;
     private TextView tvScale;
     private Button btnEditToggle;
     private Button btnVisibilityToggle;
 
-    // 크기 및 키코드 확장 커스텀 버튼 클래스
+    // 복합 인풋 패킷 어레이 지원 매크로 확장형 커스텀 버튼 클래스
     private class GameButton extends androidx.appcompat.widget.AppCompatButton {
-        final int androidKeyCode;
+        final int[] androidKeyCodes; // 다중 동시 입력을 처리하기 위한 배열형 키 스토어
         boolean isCurrentPressed = false; 
         
         int baseWidthDp;
         int baseHeightDp;
         float scaleFactor = 1.0f;
 
-        public GameButton(Context context, int androidKeyCode, int baseWidthDp, int baseHeightDp) {
+        public GameButton(Context context, int[] androidKeyCodes, int baseWidthDp, int baseHeightDp) {
             super(context);
-            this.androidKeyCode = androidKeyCode;
+            this.androidKeyCodes = androidKeyCodes;
             this.baseWidthDp = baseWidthDp;
             this.baseHeightDp = baseHeightDp;
         }
@@ -67,7 +67,6 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         try {
-            // 가로 고정 및 몰입 모드 초기화
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 WindowInsetsController controller = getWindow().getInsetsController();
@@ -83,7 +82,7 @@ public class MainActivity extends BridgeActivity {
                 );
             }
         } catch (Exception e) {
-            Log.e(TAG, "UI 초기화 실패: " + e.getMessage());
+            Log.e(TAG, "시스템 환경 구성 에러: " + e.getMessage());
         }
 
         getWindow().getDecorView().post(new Runnable() {
@@ -92,7 +91,7 @@ public class MainActivity extends BridgeActivity {
                 try {
                     setupAdvancedModularSystem();
                 } catch (Exception e) {
-                    Log.e(TAG, "모듈러 제어 레이어 구성 실패: " + e.getMessage(), e);
+                    Log.e(TAG, "모듈러 인프라 시스템 구성 실패: " + e.getMessage(), e);
                 }
             }
         });
@@ -102,7 +101,6 @@ public class MainActivity extends BridgeActivity {
         FrameLayout rootView = findViewById(android.R.id.content);
         if (rootView == null) return;
 
-        // 화면 전체를 덮는 통합 베이스 도화지
         final FrameLayout combinedPad = new FrameLayout(this);
         combinedPad.setLayoutParams(new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -110,18 +108,63 @@ public class MainActivity extends BridgeActivity {
         ));
         combinedPad.setBackgroundColor(Color.parseColor("#11000000")); 
 
-        // 1. [좌측 상단 고정] 패드 UI 숨김/보이기 토글 버튼 (언제나 터치 가능 상태 유지)
+        // 1. [좌측 상단 고정] UI 토글 버튼 (심플 아이콘 변경: ● / ○)
         btnVisibilityToggle = new Button(this);
-        btnVisibilityToggle.setText("UI 숨기기");
-        FrameLayout.LayoutParams visParams = new FrameLayout.LayoutParams(dpToPx(130), dpToPx(45));
+        btnVisibilityToggle.setText("●");
+        FrameLayout.LayoutParams visParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(45));
         visParams.gravity = Gravity.TOP | Gravity.LEFT;
         visParams.setMargins(dpToPx(15), dpToPx(15), 0, 0);
         btnVisibilityToggle.setLayoutParams(visParams);
-        btnVisibilityToggle.setBackgroundColor(Color.parseColor("#CC222222")); // 시크한 차콜 다크 톤
+        btnVisibilityToggle.setBackgroundColor(Color.parseColor("#CC222222")); 
         btnVisibilityToggle.setTextColor(Color.WHITE);
-        btnVisibilityToggle.setTextSize(14);
+        btnVisibilityToggle.setTextSize(16);
 
-        // 2. [우측 상단 고정] 편집 모드 On/Off 토글 버튼
+        // 2. [고정 유틸] ESC 단축키 버튼 (토글 모드와 무관하게 상시 오픈)
+        final Button btnEsc = new Button(this);
+        btnEsc.setText("ESC");
+        FrameLayout.LayoutParams escParams = new FrameLayout.LayoutParams(dpToPx(55), dpToPx(45));
+        escParams.gravity = Gravity.TOP | Gravity.LEFT;
+        escParams.setMargins(dpToPx(15 + 50 + 8), dpToPx(15), 0, 0); // 토글 버튼 우측 정렬
+        btnEsc.setLayoutParams(escParams);
+        btnEsc.setBackgroundColor(Color.parseColor("#CC222222"));
+        btnEsc.setTextColor(Color.WHITE);
+        btnEsc.setTextSize(11);
+
+        // 3. [고정 유틸] R 단축키 버튼 (리트라이용 상시 오픈)
+        final Button btnR = new Button(this);
+        btnR.setText("R");
+        FrameLayout.LayoutParams rParams = new FrameLayout.LayoutParams(dpToPx(55), dpToPx(45));
+        rParams.gravity = Gravity.TOP | Gravity.LEFT;
+        rParams.setMargins(dpToPx(15 + 50 + 8 + 55 + 8), dpToPx(15), 0, 0); // ESC 버튼 우측 정렬
+        btnR.setLayoutParams(rParams);
+        btnR.setBackgroundColor(Color.parseColor("#CC222222"));
+        btnR.setTextColor(Color.WHITE);
+        btnR.setTextSize(14);
+
+        // 상시 오픈 고정 유틸 버튼들을 위한 독점 터치 이벤트 리스너 바인딩 (호버 엔진 방해 차단)
+        View.OnTouchListener utilityTouchListener = new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (getBridge() == null || getBridge().getWebView() == null) return false;
+                WebView webView = getBridge().getWebView();
+                int keyCode = (v == btnEsc) ? KeyEvent.KEYCODE_ESCAPE : KeyEvent.KEYCODE_R;
+
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    v.setBackgroundColor(Color.parseColor("#88FFFFFF"));
+                    sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, keyCode);
+                    return true;
+                } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                    v.setBackgroundColor(Color.parseColor("#CC222222"));
+                    sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, keyCode);
+                    return true;
+                }
+                return false;
+            }
+        };
+        btnEsc.setOnTouchListener(utilityTouchListener);
+        btnR.setOnTouchListener(utilityTouchListener);
+
+        // 4. [우측 상단 고정] 편집 모드 토글 버튼
         btnEditToggle = new Button(this);
         btnEditToggle.setText("편집 Mode: OFF");
         FrameLayout.LayoutParams toggleParams = new FrameLayout.LayoutParams(dpToPx(130), dpToPx(45));
@@ -132,7 +175,7 @@ public class MainActivity extends BridgeActivity {
         btnEditToggle.setTextColor(Color.WHITE);
         btnEditToggle.setTextSize(14);
 
-        // 3. [상단 중앙] 크기 조절 툴바 (SizeBar)
+        // 5. [상단 중앙] 크기 변경 툴바 (SizeBar)
         sizeBar = new LinearLayout(this);
         sizeBar.setOrientation(LinearLayout.HORIZONTAL);
         sizeBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -173,53 +216,67 @@ public class MainActivity extends BridgeActivity {
         sizeBar.addView(tvScale);
         sizeBar.addView(btnPlus);
 
-        // 인게임 가상 버튼 레이어 정형화 생성 (10dp리팩토링 규격)
-        GameButton btnLeft = createGameButton("◀", KeyEvent.KEYCODE_DPAD_LEFT, 70, 70);
-        GameButton btnSoftDrop = createGameButton("▼", KeyEvent.KEYCODE_DPAD_DOWN, 70, 70);
-        GameButton btnRight = createGameButton("▶", KeyEvent.KEYCODE_DPAD_RIGHT, 70, 70);
-        GameButton btnHold = createGameButton("H", KeyEvent.KEYCODE_C, 70, 70);
-        GameButton btnRotateCCW = createGameButton("↺", KeyEvent.KEYCODE_Z, 70, 70);
-        GameButton btnRotateCW = createGameButton("↻", KeyEvent.KEYCODE_DPAD_UP, 70, 70);
-        GameButton btnHardDrop = createGameButton("DROP", KeyEvent.KEYCODE_SPACE, 90, 70);
+        // 6. [10키 아키텍처 인스턴스화] 단일 및 복합 매크로 키 바인딩 데이터 분기 처리
+        GameButton btnLeft = createGameButton("◀", new int[]{KeyEvent.KEYCODE_DPAD_LEFT}, 70, 70);
+        GameButton btnSoftDrop = createGameButton("▼", new int[]{KeyEvent.KEYCODE_DPAD_DOWN}, 70, 70);
+        GameButton btnRight = createGameButton("▶", new int[]{KeyEvent.KEYCODE_DPAD_RIGHT}, 70, 70);
+        
+        // 콤보 매크로 키 (이동코드 + 소프트드롭 코드를 동시에 내부 어레이 기판에 빌드)
+        GameButton btnLSoft = createGameButton("◀▼", new int[]{KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN}, 70, 70);
+        GameButton btnRSoft = createGameButton("▶▼", new int[]{KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN}, 70, 70);
 
-        // 그리드 맞춤용 마진 초기 세팅
-        setButtonInitialLayout(btnLeft, Gravity.BOTTOM | Gravity.LEFT, 20, 20);
-        setButtonInitialLayout(btnSoftDrop, Gravity.BOTTOM | Gravity.LEFT, 20 + 70 + 10, 20);      
-        setButtonInitialLayout(btnRight, Gravity.BOTTOM | Gravity.LEFT, 20 + 70 + 10 + 70 + 10, 20);
+        GameButton btnHold = createGameButton("H", new int[]{KeyEvent.KEYCODE_C}, 70, 70);
+        GameButton btnRotateCCW = createGameButton("↺", new int[]{KeyEvent.KEYCODE_Z}, 70, 70);
+        GameButton btnRotateCW = createGameButton("↻", new int[]{KeyEvent.KEYCODE_DPAD_UP}, 70, 70);
+        GameButton btnRotate180 = createGameButton("180", new int[]{KeyEvent.KEYCODE_A}, 70, 70); // 180도 회전 바인딩 (일반적 TETR.IO 기본 설정값인 A키 매핑)
+        GameButton btnHardDrop = createGameButton("DROP", new int[]{KeyEvent.KEYCODE_SPACE}, 90, 70);
 
-        setButtonInitialLayout(btnHardDrop, Gravity.BOTTOM | Gravity.RIGHT, 20, 20);
+        // 7. [인체공학형 2열 입체 배치 마진 맵]
+        // 왼손 구역 (상단열: 기본 방향 이동 / 하단열: 대각선 복합 매크로 배치)
+        setButtonInitialLayout(btnLeft, Gravity.BOTTOM | Gravity.LEFT, 20, 20 + 70 + 10);      // 2열 상단
+        setButtonInitialLayout(btnSoftDrop, Gravity.BOTTOM | Gravity.LEFT, 20 + 70 + 10, 20 + 70 + 10);
+        setButtonInitialLayout(btnRight, Gravity.BOTTOM | Gravity.LEFT, 20 + 70 + 10 + 70 + 10, 20 + 70 + 10);
+        setButtonInitialLayout(btnLSoft, Gravity.BOTTOM | Gravity.LEFT, 20, 20);               // 1열 하단
+        setButtonInitialLayout(btnRSoft, Gravity.BOTTOM | Gravity.LEFT, 20 + 70 + 10 + 70 + 10, 20);
+
+        // 오른손 구역 (상단열: 특수 액션 및 홀드 / 하단열: 주력 회전 및 드롭 배치)
+        setButtonInitialLayout(btnHardDrop, Gravity.BOTTOM | Gravity.RIGHT, 20, 20);          // 1열 하단
         setButtonInitialLayout(btnRotateCW, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10, 20);
         setButtonInitialLayout(btnRotateCCW, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10 + 70 + 10, 20);
-        setButtonInitialLayout(btnHold, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10 + 70 + 10 + 70 + 10, 20);
+        setButtonInitialLayout(btnRotate180, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10, 20 + 70 + 10); // 2열 상단
+        setButtonInitialLayout(btnHold, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10 + 70 + 10, 20 + 70 + 10);
 
-        // 도화지에 컴포넌트 전체 적재
+        // 컴포넌트 적재
         combinedPad.addView(btnLeft);
         combinedPad.addView(btnSoftDrop);
         combinedPad.addView(btnRight);
+        combinedPad.addView(btnLSoft);
+        combinedPad.addView(btnRSoft);
         combinedPad.addView(btnHold);
         combinedPad.addView(btnRotateCCW);
         combinedPad.addView(btnRotateCW);
+        combinedPad.addView(btnRotate180);
         combinedPad.addView(btnHardDrop);
+        
         combinedPad.addView(btnEditToggle);
-        combinedPad.addView(btnVisibilityToggle); // 고정형 숨김 토글 장착
+        combinedPad.addView(btnVisibilityToggle);
+        combinedPad.addView(btnEsc);
+        combinedPad.addView(btnR);
         combinedPad.addView(sizeBar);
 
-        // 비즈니스 로직 시스템 엔진 작동
         setupIntegratedHoverEngine(combinedPad);
         setupEditModeInteraction(combinedPad);
 
-        // [핵심 구현] 패드 UI 온오프 관통 시스템 스위치 액션 리스너
+        // [관통 제어 스위치 고도화 리스너]
         btnVisibilityToggle.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 isPadVisible = !isPadVisible;
                 if (!isPadVisible) {
-                    // 패드 숨기기 모드 활성화
-                    btnVisibilityToggle.setText("UI 보이기");
-                    btnVisibilityToggle.setBackgroundColor(Color.parseColor("#CC0055AA")); // 산뜻한 블루 톤 변환
-                    combinedPad.setBackgroundColor(Color.TRANSPARENT); // 배경 완전 클리어
+                    btnVisibilityToggle.setText("○"); // 꺼짐 심볼 동기화
+                    btnVisibilityToggle.setBackgroundColor(Color.parseColor("#CC0055AA")); 
+                    combinedPad.setBackgroundColor(Color.TRANSPARENT); 
                     
-                    // 강제 예외 처리: 편집 모드 무조건 종료 및 리셋
                     isEditMode = false;
                     btnEditToggle.setText("편집 Mode: OFF");
                     btnEditToggle.setBackgroundColor(Color.parseColor("#CCAA0000"));
@@ -230,22 +287,20 @@ public class MainActivity extends BridgeActivity {
                     }
                     clearHoverOperationalStates(combinedPad);
 
-                    // 토글 버튼 본인을 제외한 모든 가상 자식 요소들을 화면에서 영구 증발시킴
+                    // ●, ESC, R 버튼을 제외한 모든 인게임 인풋 요소를 완전히 숨겨 순정 터치 유도
                     int count = combinedPad.getChildCount();
                     for (int i = 0; i < count; i++) {
                         View child = combinedPad.getChildAt(i);
-                        if (child != btnVisibilityToggle) {
+                        if (child != btnVisibilityToggle && child != btnEsc && child != btnR) {
                             child.setVisibility(View.GONE);
                         }
                     }
-                    Log.d(TAG, "가상 패드가 비활성화되어 안드로이드 순정 터치 관통 모드로 전환되었습니다.");
+                    Log.d(TAG, "인게임 조작계가 봉인되어 100% 터치 관통 모드로 전향되었습니다.");
                 } else {
-                    // 패드 보이기 모드 복원
-                    btnVisibilityToggle.setText("UI 숨기기");
+                    btnVisibilityToggle.setText("●"); // 켜짐 심볼 동기화
                     btnVisibilityToggle.setBackgroundColor(Color.parseColor("#CC222222"));
                     combinedPad.setBackgroundColor(Color.parseColor("#11000000"));
 
-                    // 기본 조작 패드 버튼 및 편집 토글 복원
                     int count = combinedPad.getChildCount();
                     for (int i = 0; i < count; i++) {
                         View child = combinedPad.getChildAt(i);
@@ -257,7 +312,6 @@ public class MainActivity extends BridgeActivity {
             }
         });
 
-        // 플러스 마이너스 버튼 액션 스케일 바인딩
         btnPlus.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -292,10 +346,10 @@ public class MainActivity extends BridgeActivity {
         btn.setLayoutParams(lp);
     }
 
-    private GameButton createGameButton(String text, final int androidKeyCode, int widthDp, int heightDp) {
-        final GameButton button = new GameButton(this, androidKeyCode, widthDp, heightDp);
+    private GameButton createGameButton(String text, final int[] androidKeyCodes, int widthDp, int heightDp) {
+        final GameButton button = new GameButton(this, androidKeyCodes, widthDp, heightDp);
         button.setText(text);
-        button.setTextSize(16);
+        button.setTextSize(14);
         button.setPadding(0, 0, 0, 0);
         button.setBackgroundColor(Color.parseColor("#66FFFFFF"));
         button.setTextColor(Color.BLACK);
@@ -307,7 +361,7 @@ public class MainActivity extends BridgeActivity {
 
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                if (!isPadVisible || !isEditMode) return false; // 숨김 상태거나 편집 모드가 아닐 때 탈출
+                if (!isPadVisible || !isEditMode) return false; 
 
                 GameButton btn = (GameButton) v;
                 FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) btn.getLayoutParams();
@@ -375,7 +429,7 @@ public class MainActivity extends BridgeActivity {
         btnEditToggle.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!isPadVisible) return; // 패드가 안 보일 때는 작동 금지
+                if (!isPadVisible) return; 
                 
                 isEditMode = !isEditMode;
                 if (isEditMode) {
@@ -395,12 +449,11 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
-    // 마스터 멀티터치 인게임 호버 엔진
+    // 마스터 멀티터치 실시간 프레임 호버링 엔진
     private void setupIntegratedHoverEngine(final FrameLayout pad) {
         pad.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                // [웹뷰 관통 분기 처리의 핵심] 숨김 모드이거나 편집 모드일 경우 터치를 독점하지 않고 즉시 Pass 시킴
                 if (!isPadVisible || isEditMode) return false; 
 
                 if (getBridge() == null) return false;
@@ -434,6 +487,7 @@ public class MainActivity extends BridgeActivity {
                     }
                 }
 
+                // [매크로 연산 동기화 루프]
                 for (int j = 0; j < childCount; j++) {
                     View child = pad.getChildAt(j);
                     if (child instanceof GameButton) {
@@ -443,15 +497,21 @@ public class MainActivity extends BridgeActivity {
                         if (isCurrentlyHovered && !btn.isCurrentPressed) {
                             btn.isCurrentPressed = true;
                             btn.setBackgroundColor(Color.parseColor("#BBFFFFFF"));
-                            sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, btn.androidKeyCode);
+                            // 해당 매크로 버튼 내부에 할당된 모든 키 신호를 배열 순서대로 연속 순정 주입 (KeyDown)
+                            for (int code : btn.androidKeyCodes) {
+                                sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
+                            }
                         } else if (!isCurrentlyHovered && btn.isCurrentPressed) {
                             btn.isCurrentPressed = false;
                             btn.setBackgroundColor(Color.parseColor("#66FFFFFF"));
-                            sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, btn.androidKeyCode);
+                            // 해당 매크로 버튼 내부에 할당된 모든 키 신호를 배열 순서대로 연속 순정 주입 (KeyUp)
+                            for (int code : btn.androidKeyCodes) {
+                                sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
+                            }
                         }
                     }
                 }
-                return true; // 인게임 플레이 중에는 터치를 독점하여 웹뷰 클릭 씹힘 및 맵 스크롤을 원천 차단
+                return true; 
             }
         });
     }
@@ -467,7 +527,9 @@ public class MainActivity extends BridgeActivity {
                 if (btn.isCurrentPressed) {
                     btn.isCurrentPressed = false;
                     btn.setBackgroundColor(Color.parseColor("#66FFFFFF"));
-                    sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, btn.androidKeyCode);
+                    for (int code : btn.androidKeyCodes) {
+                        sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
+                    }
                 }
             }
         }
