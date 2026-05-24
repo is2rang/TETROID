@@ -80,8 +80,14 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            getWindow().getAttributes().layoutInDisplayCutoutMode = 
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
+
+        // [핵심 2] Capacitor 웹뷰 자체의 시스템 여백(Safe Area) 강제 해제
+        if (this.bridge != null && this.bridge.getWebView() != null) {
+            this.bridge.getWebView().setFitsSystemWindows(false);
         }
 
         // 밀도 가중치 사전 캐싱
@@ -171,9 +177,9 @@ public class MainActivity extends BridgeActivity {
         final Button btnEnter = new Button(this);
         btnEnter.setText("<");
         FrameLayout.LayoutParams enterParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
-        rParams.gravity = Gravity.TOP | Gravity.LEFT;
-        rParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8+ 50 + 8), dpToPx(15), 0, 0); 
-        btnEnter.setLayoutParams(rParams);
+        enterParams.gravity = Gravity.TOP | Gravity.LEFT;
+        enterParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8+ 50 + 8), dpToPx(15), 0, 0); 
+        btnEnter.setLayoutParams(enterParams);
         btnEnter.setBackgroundColor(Color.parseColor("#66000000")); // ◀ 40% 알파 검은색
         btnEnter.setTextColor(Color.WHITE);
         btnEnter.setTextSize(14);
