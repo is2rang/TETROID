@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
@@ -13,6 +14,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -167,14 +169,14 @@ public class MainActivity extends BridgeActivity {
 
         // 3. [고정 유틸] R 버튼 (40% 알파 검은색 적용)
         final Button btnEnter = new Button(this);
-        btnR.setText("<");
-        FrameLayout.LayoutParams rParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
+        btnEnter.setText("<");
+        FrameLayout.LayoutParams enterParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
         rParams.gravity = Gravity.TOP | Gravity.LEFT;
         rParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8+ 50 + 8), dpToPx(15), 0, 0); 
-        btnR.setLayoutParams(rParams);
-        btnR.setBackgroundColor(Color.parseColor("#66000000")); // ◀ 40% 알파 검은색
-        btnR.setTextColor(Color.WHITE);
-        btnR.setTextSize(14);
+        btnEnter.setLayoutParams(rParams);
+        btnEnter.setBackgroundColor(Color.parseColor("#66000000")); // ◀ 40% 알파 검은색
+        btnEnter.setTextColor(Color.WHITE);
+        btnEnter.setTextSize(14);
 
         // 고정 버튼 터치 리스너 (터치 피드백 색상 변경 제거)
         View.OnTouchListener utilityTouchListener = new View.OnTouchListener() {
