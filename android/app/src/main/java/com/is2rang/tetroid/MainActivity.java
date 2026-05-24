@@ -601,6 +601,32 @@ public class MainActivity extends BridgeActivity {
         try {
             // 1. 하드웨어 가속 강제 바인딩 (WebGL 렌더링 파이프라인 GPU 직통 연결)
             webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+            
+            // MainActivity.java의 optimizeWebViewPerformance 메서드 내부에 추가
+
+            webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
+                @Override
+                public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, android.webkit.WebResourceRequest request) {
+                  String url = request.getUrl().toString();
+        
+        // 광고 관련 도메인 리스트 패턴 매칭
+                    if (url.contains("googleads") || 
+                        url.contains("doubleclick") || 
+                        url.contains("adnxs") || 
+                        url.contains("adservice") || 
+                        url.contains("pagead")) {
+
+                        return new android.webkit.WebResourceResponse(
+                            "text/plain", 
+                            "UTF-8", 
+                            new java.io  .ByteArrayInputStream("".getBytes())
+                        );
+                    }
+        
+                    return super.shouldInterceptRequest(view, request);
+                }
+            });
+
 
             android.webkit.WebSettings settings = webView.getSettings();
             
