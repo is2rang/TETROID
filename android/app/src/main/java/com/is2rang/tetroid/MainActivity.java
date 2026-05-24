@@ -76,6 +76,11 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            getWindow().getAttributes().layoutInDisplayCutoutMode = 
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        }
 
         // 밀도 가중치 사전 캐싱
         displayDensity = getResources().getDisplayMetrics().density;
@@ -154,7 +159,18 @@ public class MainActivity extends BridgeActivity {
         btnR.setText("R");
         FrameLayout.LayoutParams rParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
         rParams.gravity = Gravity.TOP | Gravity.LEFT;
-        rParams.setMargins(dpToPx(15 + 50 + 8 + 55 + 8), dpToPx(15), 0, 0); 
+        rParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8), dpToPx(15), 0, 0); 
+        btnR.setLayoutParams(rParams);
+        btnR.setBackgroundColor(Color.parseColor("#66000000")); // ◀ 40% 알파 검은색
+        btnR.setTextColor(Color.WHITE);
+        btnR.setTextSize(14);
+
+        // 3. [고정 유틸] R 버튼 (40% 알파 검은색 적용)
+        final Button btnEnter = new Button(this);
+        btnR.setText("<");
+        FrameLayout.LayoutParams rParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
+        rParams.gravity = Gravity.TOP | Gravity.LEFT;
+        rParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8+ 50 + 8), dpToPx(15), 0, 0); 
         btnR.setLayoutParams(rParams);
         btnR.setBackgroundColor(Color.parseColor("#66000000")); // ◀ 40% 알파 검은색
         btnR.setTextColor(Color.WHITE);
@@ -166,8 +182,16 @@ public class MainActivity extends BridgeActivity {
             public boolean onTouch(View v, MotionEvent event) {
                 if (getBridge() == null || getBridge().getWebView() == null) return false;
                 WebView webView = getBridge().getWebView();
-                int keyCode = (v == btnEsc) ? KeyEvent.KEYCODE_ESCAPE : KeyEvent.KEYCODE_R;
-
+                
+                int keyCode;
+                if (v == btnEsc) {
+                    keyCode = KeyEvent.KEYCODE_ESCAPE;
+                } else if (v == btnR) {
+                    keyCode = KeyEvent.KEYCODE_R;
+                } else {
+                    keyCode = KeyEvent.KEYCODE_ENTER; // ◀ Enter 키 매핑
+                }
+                
                 int action = event.getAction();
                 if (action == MotionEvent.ACTION_DOWN) {
                     // ◀ 누를 때 배경색 변경 피드백 제거
@@ -183,6 +207,7 @@ public class MainActivity extends BridgeActivity {
         };
         btnEsc.setOnTouchListener(utilityTouchListener);
         btnR.setOnTouchListener(utilityTouchListener);
+        btnEnter.setOnTouchListener(utilityTouchListener);
 
         // 4. [우측 상단 고정] Edit / Save 제어 토글 버튼
         btnEditToggle = new Button(this);
@@ -275,6 +300,7 @@ public class MainActivity extends BridgeActivity {
         
         combinedPad.addView(btnEsc);
         combinedPad.addView(btnR);
+        combinedPad.addView(btnEnter);
         combinedPad.addView(btnEditToggle);
         combinedPad.addView(btnVisibilityToggle);
         combinedPad.addView(sizeBar);
@@ -304,6 +330,7 @@ public class MainActivity extends BridgeActivity {
                     btnEditToggle.setVisibility(View.GONE);
                     btnEsc.setVisibility(View.GONE);
                     btnR.setVisibility(View.GONE);
+                    btnEnter.setVisibility(View.GONE);
                     
                     for (int i = 0; i < gameButtons.size(); i++) {
                         gameButtons.get(i).setVisibility(View.GONE);
@@ -313,6 +340,7 @@ public class MainActivity extends BridgeActivity {
                     btnEditToggle.setVisibility(View.VISIBLE);
                     btnEsc.setVisibility(View.VISIBLE);
                     btnR.setVisibility(View.VISIBLE);
+                    btnEnter.setVisibility(View.VISIBLE);
                     for (int i = 0; i < gameButtons.size(); i++) {
                         gameButtons.get(i).setVisibility(View.VISIBLE);
                     }
