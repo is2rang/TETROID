@@ -187,13 +187,13 @@ public class MainActivity extends BridgeActivity {
         // 4. [우측 상단 고정] Edit / Save 제어 토글 버튼
         btnEditToggle = new Button(this);
         btnEditToggle.setText("Edit");
-        FrameLayout.LayoutParams toggleParams = new FrameLayout.LayoutParams(dpToPx(75), dpToPx(30));
+        FrameLayout.LayoutParams toggleParams = new FrameLayout.LayoutParams(dpToPx(75), dpToPx(50));
         toggleParams.gravity = Gravity.TOP | Gravity.RIGHT;
         toggleParams.setMargins(0, dpToPx(15), dpToPx(15), 0);
         btnEditToggle.setLayoutParams(toggleParams);
         btnEditToggle.setBackgroundColor(Color.parseColor("#66000000")); 
         btnEditToggle.setTextColor(Color.WHITE);
-        btnEditToggle.setTextSize(12);
+        btnEditToggle.setTextSize(13);
 
         // 5. [상단 중앙] 크기 조절 세그먼트 바 (SizeBar)
         sizeBar = new LinearLayout(this);
@@ -396,8 +396,8 @@ public class MainActivity extends BridgeActivity {
         button.setText(text);
         button.setTextSize(14);
         button.setPadding(0, 0, 0, 0);
-        button.setBackgroundColor(Color.parseColor("#66000000")); // ◀ 기본 색상을 40% 알파 검은색으로 지정
-        button.setTextColor(Color.WHITE); // ◀ 검은 배경 가독성을 위해 글자색을 WHITE로 변경
+        button.setBackgroundColor(Color.parseColor("#66000000")); 
+        button.setTextColor(Color.WHITE); 
         button.setClickable(false); 
 
         button.setOnTouchListener(new View.OnTouchListener() {
@@ -410,7 +410,6 @@ public class MainActivity extends BridgeActivity {
 
                 GameButton btn = (GameButton) v;
                 FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) btn.getLayoutParams();
-                int gridSizePx = dpToPx(GRID_SIZE_DP);
 
                 int action = event.getAction();
                 if (action == MotionEvent.ACTION_DOWN) {
@@ -425,20 +424,29 @@ public class MainActivity extends BridgeActivity {
                     float diffX = event.getRawX() - startX;
                     float diffY = event.getRawY() - startY;
 
+                    // 🚀 [핵심 수정] 모든 연산을 DP 레이어에서 완결 지은 후 픽셀로 최종 변환
                     if ((lp.gravity & Gravity.LEFT) == Gravity.LEFT) {
-                        int targetLeft = initLeft + (int) diffX;
-                        lp.leftMargin = (targetLeft / gridSizePx) * gridSizePx;
+                        int initLeftDp = Math.round(initLeft / displayDensity);
+                        int targetLeftDp = initLeftDp + Math.round(diffX / displayDensity);
+                        int snappedLeftDp = Math.round((float) targetLeftDp / GRID_SIZE_DP) * GRID_SIZE_DP;
+                        lp.leftMargin = dpToPx(snappedLeftDp);
                     } else if ((lp.gravity & Gravity.RIGHT) == Gravity.RIGHT) {
-                        int targetRight = initRight - (int) diffX;
-                        lp.rightMargin = (targetRight / gridSizePx) * gridSizePx;
+                        int initRightDp = Math.round(initRight / displayDensity);
+                        int targetRightDp = initRightDp - Math.round(diffX / displayDensity);
+                        int snappedRightDp = Math.round((float) targetRightDp / GRID_SIZE_DP) * GRID_SIZE_DP;
+                        lp.rightMargin = dpToPx(snappedRightDp);
                     }
 
                     if ((lp.gravity & Gravity.BOTTOM) == Gravity.BOTTOM) {
-                        int targetBottom = initBottom - (int) diffY;
-                        lp.bottomMargin = (targetBottom / gridSizePx) * gridSizePx;
+                        int initBottomDp = Math.round(initBottom / displayDensity);
+                        int targetBottomDp = initBottomDp - Math.round(diffY / displayDensity);
+                        int snappedBottomDp = Math.round((float) targetBottomDp / GRID_SIZE_DP) * GRID_SIZE_DP;
+                        lp.bottomMargin = dpToPx(snappedBottomDp);
                     } else if ((lp.gravity & Gravity.TOP) == Gravity.TOP) {
-                        int targetTop = initTop + (int) diffY;
-                        lp.topMargin = (targetTop / gridSizePx) * gridSizePx;
+                        int initTopDp = Math.round(initTop / displayDensity);
+                        int targetTopDp = initTopDp + Math.round(diffY / displayDensity);
+                        int snappedTopDp = Math.round((float) targetTopDp / GRID_SIZE_DP) * GRID_SIZE_DP;
+                        lp.topMargin = dpToPx(snappedTopDp);
                     }
 
                     btn.setLayoutParams(lp);
@@ -450,6 +458,7 @@ public class MainActivity extends BridgeActivity {
         gameButtons.add(button); 
         return button;
     }
+
 
     private void executeButtonSelection(GameButton btn) {
         if (selectedButton != null) {
@@ -584,6 +593,32 @@ public class MainActivity extends BridgeActivity {
 
         try {
             webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+            webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
+                @Override
+                public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, android.webkit.WebResourceRequest request) {
+                    String url = request.getUrl().toString();
+                    
+                    // 광고 관련 도메인 리스트 패턴 매칭
+                    if (url.contains("googleads") || 
+                        url.contains("doubleclick") || 
+                        url.contains("adnxs") || 
+                        url.contains("adservice") || 
+                        url.contains("pagead")) {
+                        
+                        // 광고 요청을 가로채서 텅 빈(Empty) 텍스트 응답을 반환하여 차단
+                        return new android.webkit.WebResourceResponse(
+                            "text/plain", 
+                            "UTF-8", 
+                            new java.io.ByteArrayInputStream("".getBytes())
+                        );
+                    }
+                    
+                    return super.shouldInterceptRequest(view, request);
+                }
+            });
+
+            
             android.webkit.WebSettings settings = webView.getSettings();
             
             settings.setJavaScriptEnabled(true);
