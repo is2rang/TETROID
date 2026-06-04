@@ -23,6 +23,7 @@ import android.widget.TextView;
 import com.getcapacitor.BridgeActivity;
 import java.util.ArrayList;
 import java.util.List;
+import android.util.SparseArray;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "TetrioMobile";
@@ -37,6 +38,8 @@ public class MainActivity extends BridgeActivity {
     // [최적화] 캐싱된 조작 버튼 리스트 (런타임 루프 부하 절감)
     private final List<GameButton> gameButtons = new ArrayList<>();
     
+    private final SparseArray<GameButton> pointerButtonMap = new SparseArray<>();
+    
     // [최적화] 디스플레이 밀도 값 전역 캐싱 (Math 연산 비용 절감)
     private float displayDensity;
 
@@ -49,7 +52,8 @@ public class MainActivity extends BridgeActivity {
     // 인게임 조작 전용 확장형 가상 버튼 클래스
     private class GameButton extends androidx.appcompat.widget.AppCompatButton {
         final int[] androidKeyCodes; 
-        boolean isCurrentPressed = false; 
+        boolean isCurrentPressed = false;
+        int activePointerCount = 0;
         boolean tempHovered = false; // [최적화] 내부 상태 플래그
         
         int baseWidthDp;
@@ -543,65 +547,107 @@ public class MainActivity extends BridgeActivity {
 
     // 멀티터치 호버 엔진 (터치 피드백 색상 변경 코드 완벽히 제거)
     private void setupOptimizedHoverEngine(final FrameLayout pad) {
-        pad.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (!isPadVisible || isEditMode) return false; 
+    pad.setOnTouchListener((v, event) -> {
 
-                if (getBridge() == null) return false;
-                WebView webView = getBridge().getWebView();
-                if (webView == null) return false;
+        if (!isPadVisible || isEditMode) return false;
 
-                int action = event.getActionMasked();
+        if (getBridge() == null) return false;
+
+        WebView webView = getBridge().getWebView();
+        if (webView == null) return false;
+
+        int action = event.getActionMasked();
+        int actionIndex = event.getActionIndex();
+
+        switch (action) {
+
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN: {
+
+                int pointerId = event.getPointerId(actionIndex);
+
+                GameButton btn = findButtonAt(
+                        event.getX(actionIndex),
+                        event.getY(actionIndex)
+                );
+
+                pointerButtonMap.put(pointerId, btn);
+                pressButton(webView, btn);
+                break;
+            }
+
+            case MotionEvent.ACTION_MOVE: {
+
                 int pointerCount = event.getPointerCount();
-                int buttonSize = gameButtons.size();
 
-                for (int j = 0; j < buttonSize; j++) {
-                    gameButtons.get(j).tempHovered = false;
-                }
+                for (int i = 0; i < pointerCount; i++) {
 
-                if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
-                    int actionIndex = event.getActionIndex();
-                    for (int i = 0; i < pointerCount; i++) {
-                        if (action == MotionEvent.ACTION_POINTER_UP && i == actionIndex) {
-                            continue;
-                        }
+                    int pointerId = event.getPointerId(i);
 
-                        float x = event.getX(i);
-                        float y = event.getY(i);
+                    GameButton oldBtn = pointerButtonMap.get(pointerId);
 
-                        for (int j = 0; j < buttonSize; j++) {
-                            GameButton btn = gameButtons.get(j);
-                            if (btn.getVisibility() == View.VISIBLE) {
-                                if (x >= btn.getLeft() && x <= btn.getRight() &&
-                                    y >= btn.getTop() && y <= btn.getBottom()) {
-                                    btn.tempHovered = true;
-                                }
-                            }
-                        }
+                    GameButton newBtn = findButtonAt(
+                            event.getX(i),
+                            event.getY(i)
+                    );
+
+                    if (oldBtn != newBtn) {
+                        releaseButton(webView, oldBtn);
+                        pressButton(webView, newBtn);
+                        pointerButtonMap.put(pointerId, newBtn);
                     }
                 }
 
-                for (int j = 0; j < buttonSize; j++) {
-                    GameButton btn = gameButtons.get(j);
-                    if (btn.tempHovered && !btn.isCurrentPressed) {
-                        btn.isCurrentPressed = true;
-                        // ◀ 누를 때 배경색 변경 피드백 주석 처리/제거 완료
-                        for (int code : btn.androidKeyCodes) {
-                            sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
-                        }
-                    } else if (!btn.tempHovered && btn.isCurrentPressed) {
+                break;
+            }
+
+            case MotionEvent.ACTION_POINTER_UP:
+            case MotionEvent.ACTION_UP: {
+
+                int pointerId = event.getPointerId(actionIndex);
+
+                GameButton btn = pointerButtonMap.get(pointerId);
+
+                releaseButton(webView, btn);
+                pointerButtonMap.remove(pointerId);
+
+                break;
+            }
+
+            case MotionEvent.ACTION_CANCEL: {
+
+                HashSet<GameButton> uniqueButtons = new HashSet<>();
+
+                for (int i = 0; i < pointerButtonMap.size(); i++) {
+                    GameButton btn = pointerButtonMap.valueAt(i);
+                
+                    if (btn != null) {
+                        uniqueButtons.add(btn);
+                    }
+                }
+                
+                for (GameButton btn : uniqueButtons) {
+                
+                    btn.activePointerCount = 0;
+                
+                    if (btn.isCurrentPressed) {
+                
                         btn.isCurrentPressed = false;
-                        // ◀ 손을 뗄 때 배경색 복원 피드백 주석 처리/제거 완료
+                
                         for (int code : btn.androidKeyCodes) {
                             sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
                         }
                     }
                 }
-                return true; 
+
+                pointerButtonMap.clear();
+                break;
             }
-        });
-    }
+        }
+
+        return true;
+    });
+}
 
     private void clearHoverOperationalStates() {
         if (getBridge() == null || getBridge().getWebView() == null) return;
@@ -611,16 +657,71 @@ public class MainActivity extends BridgeActivity {
             GameButton btn = gameButtons.get(i);
             if (btn.isCurrentPressed) {
                 btn.isCurrentPressed = false;
+                btn.activePointerCount = 0;
                 // ◀ 초기화 시 배경색 복원 피드백 제거
                 for (int code : btn.androidKeyCodes) {
                     sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
                 }
             }
         }
+        
+        pointerButtonMap.clear();
+    }
+
+    private GameButton findButtonAt(float x, float y) {
+        int size = gameButtons.size();
+    
+        for (int i = 0; i < size; i++) {
+            GameButton btn = gameButtons.get(i);
+    
+            if (btn.getVisibility() != View.VISIBLE) continue;
+    
+            if (x >= btn.getLeft() &&
+                x <= btn.getRight() &&
+                y >= btn.getTop() &&
+                y <= btn.getBottom()) {
+                return btn;
+            }
+        }
+
+        return null;
+    }
+
+    private void pressButton(WebView webView, GameButton btn) {
+        if (btn == null) return;
+    
+        btn.activePointerCount++;
+    
+        if (btn.activePointerCount == 1) {
+            btn.isCurrentPressed = true;
+    
+            for (int code : btn.androidKeyCodes) {
+                sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
+            }
+        }
+    }
+    
+    private void releaseButton(WebView webView, GameButton btn) {
+        if (btn == null) return;
+    
+        if (btn.activePointerCount > 0) {
+            btn.activePointerCount--;
+        }
+    
+        if (btn.activePointerCount == 0 && btn.isCurrentPressed) {
+            btn.isCurrentPressed = false;
+    
+            for (int code : btn.androidKeyCodes) {
+                sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
+            }
+        }
     }
 
     private void sendNativeKeyEvent(WebView webView, int keyAction, int androidKeyCode) {
-        webView.requestFocus();
+        if (!webView.hasFocus()) {
+            webView.requestFocus();
+        }
+        
         webView.dispatchKeyEvent(new KeyEvent(keyAction, androidKeyCode));
     }
 
