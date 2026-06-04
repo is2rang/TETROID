@@ -23,6 +23,7 @@ import android.widget.TextView;
 import com.getcapacitor.BridgeActivity;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashSet;
 import android.util.SparseArray;
 
 public class MainActivity extends BridgeActivity {
