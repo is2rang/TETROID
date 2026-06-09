@@ -211,7 +211,6 @@ public class MainActivity extends BridgeActivity {
                 
                 int action = event.getAction();
                 if (action == MotionEvent.ACTION_DOWN) {
-                    // ◀ 누를 때 배경색 변경 피드백 제거
                     sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, keyCode);
                     return true;
                 } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
@@ -468,8 +467,7 @@ public class MainActivity extends BridgeActivity {
                 } else if (action == MotionEvent.ACTION_MOVE) {
                     float diffX = event.getRawX() - startX;
                     float diffY = event.getRawY() - startY;
-
-                    // 🚀 [핵심 수정] 모든 연산을 DP 레이어에서 완결 지은 후 픽셀로 최종 변환
+                    
                     if ((lp.gravity & Gravity.LEFT) == Gravity.LEFT) {
                         int initLeftDp = Math.round(initLeft / displayDensity);
                         int targetLeftDp = initLeftDp + Math.round(diffX / displayDensity);
@@ -659,7 +657,7 @@ public class MainActivity extends BridgeActivity {
             if (btn.isCurrentPressed) {
                 btn.isCurrentPressed = false;
                 btn.activePointerCount = 0;
-                // ◀ 초기화 시 배경색 복원 피드백 제거
+                
                 for (int code : btn.androidKeyCodes) {
                     sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
                 }
@@ -697,7 +695,11 @@ public class MainActivity extends BridgeActivity {
             btn.isCurrentPressed = true;
     
             for (int code : btn.androidKeyCodes) {
-                sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
+                if (code == KeyEvent.KEYCODE_SPACE) {
+                    sendJsKeyEvent(webView, true, "Space");
+                } else {
+                    sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
+                }
             }
         }
     }
@@ -719,11 +721,20 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void sendNativeKeyEvent(WebView webView, int keyAction, int androidKeyCode) {
-        if (!webView.hasFocus()) {
-            webView.requestFocus();
-        }
-        
         webView.dispatchKeyEvent(new KeyEvent(keyAction, androidKeyCode));
+    }
+    
+    private void sendJsKeyEvent(WebView webView, boolean isDown, String code) {
+        String type = isDown ? "keydown" : "keyup";
+    
+        String js =
+            "window.dispatchEvent(new KeyboardEvent('" + type + "', {" +
+            "key:'" + code + "'," +
+            "code:'" + code + "'," +
+            "bubbles:true" +
+            "}));";
+    
+        webView.evaluateJavascript(js, null);
     }
 
     private int dpToPx(int dp) {
