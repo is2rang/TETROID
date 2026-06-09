@@ -12,6 +12,7 @@
         <!-- 앱 시작 화면 -->
         <activity
             android:name=".LaunchActivity"
+            android:screenOrientation="landscape"
             android:exported="true"
             android:theme="@style/AppTheme.NoActionBarLaunch">
 
@@ -29,6 +30,7 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:screenOrientation="landscape"
             android:exported="true"
             android:hardwareAccelerated="true" />
 
