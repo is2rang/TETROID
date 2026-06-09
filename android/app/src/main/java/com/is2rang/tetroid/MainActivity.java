@@ -105,7 +105,6 @@ public class MainActivity extends BridgeActivity {
 
     private class GamePadOverlay extends FrameLayout {
         private final Paint buttonPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint pressedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint selectedBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
@@ -130,7 +129,6 @@ public class MainActivity extends BridgeActivity {
             setClipToPadding(false);
 
             buttonPaint.setColor(Color.parseColor("#66000000"));
-            pressedPaint.setColor(Color.parseColor("#99000000"));
 
             selectedBorderPaint.setStyle(Paint.Style.STROKE);
             selectedBorderPaint.setStrokeWidth(dpToPx(3));
@@ -421,12 +419,7 @@ public class MainActivity extends BridgeActivity {
             }
 
             for (VirtualButton btn : buttons) {
-                Paint fill = btn.isCurrentPressed ? pressedPaint : buttonPaint;
-                canvas.drawRoundRect(btn.bounds, dpToPx(12), dpToPx(12), fill);
-
-                if (btn.selected) {
-                    canvas.drawRoundRect(btn.bounds, dpToPx(12), dpToPx(12), selectedBorderPaint);
-                }
+                canvas.drawRect(btn.bounds, buttonPaint);
 
                 float cx = btn.bounds.centerX();
                 float cy = btn.bounds.centerY() - ((textPaint.descent() + textPaint.ascent()) / 2f);
