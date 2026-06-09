@@ -50,7 +50,7 @@ public class LaunchActivity extends Activity {
                 );
             }
         } catch (Exception e) {
-            Log.e(TAG, "해상도 몰입 모드 초기화 실패: " + e.getMessage(), e);
+            
         }
 
         LinearLayout root = new LinearLayout(this);
