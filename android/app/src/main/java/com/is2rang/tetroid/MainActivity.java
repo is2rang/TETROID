@@ -496,7 +496,7 @@ public class MainActivity extends BridgeActivity {
 
                     btn.setLayoutParams(lp);
                 }
-                return true; 
+                return false; 
             }
         });
 
