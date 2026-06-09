@@ -2,9 +2,4 @@
   "appId": "com.is2rang.tetroid",
   "appName": "TETR.IO Mobile",
   "webDir": "www",
-  "server": {
-    "url": "https://tetr.io/",
-    "androidScheme": "https",
-    "allowMixedContent": true
-  }
 }

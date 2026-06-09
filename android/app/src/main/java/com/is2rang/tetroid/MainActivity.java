@@ -37,6 +37,8 @@ public class MainActivity extends BridgeActivity {
     private static final String TAG = "TetrioMobile";
     private static final int GRID_SIZE_DP = 10;
     private static final String PREFS_NAME = "TetroidCustomPadPrefs";
+    
+    private String launchRoomCode = "";
 
     private boolean isPadVisible = true;
     private boolean isEditMode = false;
@@ -444,6 +446,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        launchRoomCode = getIntent().getStringExtra("roomCode");
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
@@ -971,6 +975,8 @@ public class MainActivity extends BridgeActivity {
                     return super.shouldInterceptRequest(view, request);
                 }
             });
+
+            webView.loadUrl("https://tetr.io/" + launchRoomCode);
 
             android.webkit.WebSettings settings = webView.getSettings();
 
