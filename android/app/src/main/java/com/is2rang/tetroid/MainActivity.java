@@ -49,7 +49,7 @@ public class MainActivity extends BridgeActivity {
 
     private GamePadOverlay combinedPad;
 
-    private LinearLayout ;
+    private LinearLayout sizeBar;
     private TextView tvScale;
     private Button btnEditToggle;
     private Button btnVisibilityToggle;
@@ -691,19 +691,19 @@ public class MainActivity extends BridgeActivity {
         btnEditToggle.setTextColor(Color.WHITE);
         btnEditToggle.setTextSize(13);
 
-         = new LinearLayout(this);
-        .setOrientation(LinearLayout.HORIZONTAL);
-        .setGravity(Gravity.CENTER_VERTICAL);
-        FrameLayout.LayoutParams Params = new FrameLayout.LayoutParams(
+        sizeBar = new LinearLayout(this);
+        sizeBar.setOrientation(LinearLayout.HORIZONTAL);
+        sizeBar.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout.LayoutParams sizeBarParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 dpToPx(50)
         );
-        Params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        Params.setMargins(0, dpToPx(15), 0, 0);
-        .setLayoutParams(Params);
-        .setBackgroundColor(Color.parseColor("#DD222222"));
-        .setPadding(dpToPx(15), 0, dpToPx(15), 0);
-        .setVisibility(View.GONE);
+        sizeBarParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        sizeBarParams.setMargins(0, dpToPx(15), 0, 0);
+        sizeBar.setLayoutParams(Params);
+        sizeBar.setBackgroundColor(Color.parseColor("#DD222222"));
+        sizeBar.setPadding(dpToPx(15), 0, dpToPx(15), 0);
+        sizeBar.setVisibility(View.GONE);
 
         Button btnMinus = new Button(this);
         btnMinus.setText("-");
@@ -731,9 +731,9 @@ public class MainActivity extends BridgeActivity {
         btnPlus.setBackgroundColor(Color.parseColor("#66000000"));
         btnPlus.setLayoutParams(btnSizeParams);
 
-        .addView(btnMinus);
-        .addView(tvScale);
-        .addView(btnPlus);
+        sizeBar.addView(btnMinus);
+        sizeBar.addView(tvScale);
+        sizeBar.addView(btnPlus);
 
         btnPlus.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -754,7 +754,7 @@ public class MainActivity extends BridgeActivity {
         parent.addView(btnR);
         parent.addView(btnEnter);
         parent.addView(btnEditToggle);
-        parent.addView();
+        parent.addView(sizeBar);
 
         btnVisibilityToggle.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -767,7 +767,7 @@ public class MainActivity extends BridgeActivity {
                     if (isEditMode) {
                         isEditMode = false;
                         btnEditToggle.setText("Edit");
-                        .setVisibility(View.GONE);
+                        sizeBar.setVisibility(View.GONE);
                         clearSelectedButton();
                     }
 
@@ -806,7 +806,7 @@ public class MainActivity extends BridgeActivity {
                 if (isEditMode) {
                     isEditMode = false;
                     btnEditToggle.setText("Edit");
-                    .setVisibility(View.GONE);
+                    sizeBar.setVisibility(View.GONE);
 
                     if (selectedButton != null) {
                         selectedButton.selected = false;
@@ -826,7 +826,7 @@ public class MainActivity extends BridgeActivity {
                         selectedButton.selected = false;
                         selectedButton = null;
                     }
-                    .setVisibility(View.GONE);
+                    sizeBar.setVisibility(View.GONE);
                     if (combinedPad != null) {
                         combinedPad.invalidate();
                     }
@@ -853,7 +853,7 @@ public class MainActivity extends BridgeActivity {
 
         selectedButton = btn;
         selectedButton.selected = true;
-        .setVisibility(View.VISIBLE);
+        sizeBar.setVisibility(View.VISIBLE);
         refreshScaleText();
 
         if (combinedPad != null) {
