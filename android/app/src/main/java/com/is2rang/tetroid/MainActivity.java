@@ -3,14 +3,15 @@ package com.is2rang.tetroid;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
-import android.graphics.Color;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -24,71 +25,437 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import com.getcapacitor.BridgeActivity;
+
 import java.util.ArrayList;
-import java.util.List;
 import java.util.HashSet;
-import android.util.SparseArray;
+import java.util.List;
 
 public class MainActivity extends BridgeActivity {
-    private static final String TAG = "TetrioMobile";
-    private static final int GRID_SIZE_DP = 10; 
-    private static final String PREFS_NAME = "TetroidCustomPadPrefs"; 
 
-    private boolean isPadVisible = true; 
+    private static final String TAG = "TetrioMobile";
+    private static final int GRID_SIZE_DP = 10;
+    private static final String PREFS_NAME = "TetroidCustomPadPrefs";
+
+    private boolean isPadVisible = true;
     private boolean isEditMode = false;
-    private GameButton selectedButton = null;
-   
-    private final List<GameButton> gameButtons = new ArrayList<>();
-    
-    private final SparseArray<GameButton> pointerButtonMap = new SparseArray<>();
-    
+
+    private VirtualButton selectedButton = null;
+
     private float displayDensity;
-    
+
+    private GamePadOverlay combinedPad;
+
     private LinearLayout sizeBar;
     private TextView tvScale;
     private Button btnEditToggle;
     private Button btnVisibilityToggle;
-    
-    private class GameButton extends androidx.appcompat.widget.AppCompatButton {
-        final int[] androidKeyCodes; 
+    private Button btnEsc;
+    private Button btnR;
+    private Button btnEnter;
+
+    private class VirtualButton {
+        final String saveKey;
+        final String label;
+        final RectF bounds = new RectF();
+        final Rect hitRect = new Rect();
+        final int[] androidKeyCodes;
+
         boolean isCurrentPressed = false;
         int activePointerCount = 0;
-        boolean tempHovered = false;
-        
-        int baseWidthDp;
-        int baseHeightDp;
-        float scaleFactor = 1.0f;
-        
-        final Rect hitbox = new Rect();
+        boolean selected = false;
 
-        public GameButton(Context context, int[] androidKeyCodes, int baseWidthDp, int baseHeightDp) {
-            super(context);
-            this.androidKeyCodes = androidKeyCodes;
+        final int baseWidthDp;
+        final int baseHeightDp;
+        float scaleFactor = 1.0f;
+
+        VirtualButton(String saveKey, String label, int[] keyCodes, int baseWidthDp, int baseHeightDp) {
+            this.saveKey = saveKey;
+            this.label = label;
+            this.androidKeyCodes = keyCodes;
             this.baseWidthDp = baseWidthDp;
             this.baseHeightDp = baseHeightDp;
         }
 
-        public void changeScale(float delta) {
-            scaleFactor += delta;
-            if (scaleFactor < 0.5f) scaleFactor = 0.5f; 
-            if (scaleFactor > 2.0f) scaleFactor = 2.0f; 
-            
-            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) getLayoutParams();
-            lp.width = dpToPx((int) (baseWidthDp * scaleFactor));
-            lp.height = dpToPx((int) (baseHeightDp * scaleFactor));
-            setLayoutParams(lp);
+        float getWidthPx() {
+            return dpToPx(baseWidthDp) * scaleFactor;
+        }
+
+        float getHeightPx() {
+            return dpToPx(baseHeightDp) * scaleFactor;
+        }
+
+        void setBounds(float left, float top) {
+            float w = getWidthPx();
+            float h = getHeightPx();
+            bounds.set(left, top, left + w, top + h);
+            rebuildHitRect();
+        }
+
+        void rebuildHitRect() {
+            hitRect.set(
+                    Math.round(bounds.left),
+                    Math.round(bounds.top),
+                    Math.round(bounds.right),
+                    Math.round(bounds.bottom)
+            );
+        }
+    }
+
+    private class GamePadOverlay extends FrameLayout {
+        private final Paint buttonPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint pressedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint selectedBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        private final List<VirtualButton> buttons = new ArrayList<>();
+        private final SparseArray<VirtualButton> pointerButtonMap = new SparseArray<>();
+
+        private boolean layoutInitialized = false;
+
+        private float dragStartX;
+        private float dragStartY;
+        private float originLeft;
+        private float originTop;
+
+        GamePadOverlay(Context context) {
+            super(context);
+
+            setWillNotDraw(false);
+            setClickable(true);
+            setFocusable(true);
+            setFocusableInTouchMode(true);
+            setClipChildren(false);
+            setClipToPadding(false);
+
+            buttonPaint.setColor(Color.parseColor("#66000000"));
+            pressedPaint.setColor(Color.parseColor("#99000000"));
+
+            selectedBorderPaint.setStyle(Paint.Style.STROKE);
+            selectedBorderPaint.setStrokeWidth(dpToPx(3));
+            selectedBorderPaint.setColor(Color.WHITE);
+
+            textPaint.setColor(Color.WHITE);
+            textPaint.setTextAlign(Paint.Align.CENTER);
+            textPaint.setTextSize(dpToPx(16));
+        }
+
+        void addVirtualButton(VirtualButton button) {
+            buttons.add(button);
+        }
+
+        List<VirtualButton> getButtons() {
+            return buttons;
+        }
+
+        void setPadVisible(boolean visible) {
+            if (!visible) {
+                releaseAllPressedStates();
+            }
+            invalidate();
+        }
+
+        void initializeButtonLayouts() {
+            if (layoutInitialized) {
+                return;
+            }
+
+            if (getWidth() == 0 || getHeight() == 0) {
+                post(this::initializeButtonLayouts);
+                return;
+            }
+
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+
+            for (VirtualButton btn : buttons) {
+                applyStoredOrDefaultLayout(btn, prefs);
+            }
+
+            layoutInitialized = true;
+            invalidate();
+        }
+
+        private void applyStoredOrDefaultLayout(VirtualButton btn, SharedPreferences prefs) {
+            String key = btn.saveKey;
+
+            if (prefs.contains(key + "_left") && prefs.contains(key + "_top")) {
+                float left = prefs.getFloat(key + "_left", 0f);
+                float top = prefs.getFloat(key + "_top", 0f);
+                float scale = prefs.getFloat(key + "_scale", 1.0f);
+
+                btn.scaleFactor = clamp(scale, 0.5f, 2.0f);
+                btn.setBounds(left, top);
+                return;
+            }
+
+            applyDefaultLayout(btn);
+        }
+
+        private void applyDefaultLayout(VirtualButton btn) {
+            int margin = dpToPx(20);
+            int gap = dpToPx(10);
+            float screenW = getWidth();
+            float screenH = getHeight();
+
+            float sizeW = btn.getWidthPx();
+            float sizeH = btn.getHeightPx();
+
+            float leftX = margin;
+            float midX = leftX + sizeW + gap;
+            float rightX = midX + sizeW + gap;
+
+            float bottomY = screenH - margin - sizeH;
+            float upperY = bottomY - gap - sizeH;
+
+            float rightGroupRightX = screenW - margin - sizeW;
+            float rightGroupMidX = rightGroupRightX - gap - sizeW;
+            float rightGroupLeftX = rightGroupMidX - gap - sizeW;
+
+            switch (btn.saveKey) {
+                case "left":
+                    btn.setBounds(leftX, bottomY);
+                    break;
+                case "soft_drop":
+                    btn.setBounds(midX, bottomY);
+                    break;
+                case "right":
+                    btn.setBounds(rightX, bottomY);
+                    break;
+                case "l_soft":
+                    btn.setBounds(leftX, upperY);
+                    break;
+                case "r_soft":
+                    btn.setBounds(rightX, upperY);
+                    break;
+                case "hard_drop":
+                    btn.setBounds(rightGroupRightX, bottomY);
+                    break;
+                case "rotate_cw":
+                    btn.setBounds(rightGroupMidX, bottomY);
+                    break;
+                case "rotate_ccw":
+                    btn.setBounds(rightGroupLeftX, bottomY);
+                    break;
+                case "rotate_180":
+                    btn.setBounds(rightGroupMidX, upperY);
+                    break;
+                case "hold":
+                    btn.setBounds(rightGroupLeftX, upperY);
+                    break;
+                default:
+                    btn.setBounds(leftX, bottomY);
+                    break;
+            }
+        }
+
+        void saveLayoutsToPrefs() {
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            SharedPreferences.Editor editor = prefs.edit();
+
+            for (VirtualButton btn : buttons) {
+                editor.putFloat(btn.saveKey + "_left", btn.bounds.left);
+                editor.putFloat(btn.saveKey + "_top", btn.bounds.top);
+                editor.putFloat(btn.saveKey + "_scale", btn.scaleFactor);
+            }
+
+            editor.apply();
+        }
+
+        void clearAllPressedStates() {
+            WebView webView = getCurrentWebView();
+            if (webView == null) {
+                pointerButtonMap.clear();
+                return;
+            }
+
+            HashSet<VirtualButton> uniqueButtons = new HashSet<>();
+            for (int i = 0; i < pointerButtonMap.size(); i++) {
+                VirtualButton btn = pointerButtonMap.valueAt(i);
+                if (btn != null) uniqueButtons.add(btn);
+            }
+
+            for (VirtualButton btn : uniqueButtons) {
+                if (btn.isCurrentPressed) {
+                    btn.isCurrentPressed = false;
+                    btn.activePointerCount = 0;
+                    for (int code : btn.androidKeyCodes) {
+                        sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
+                    }
+                }
+            }
+
+            pointerButtonMap.clear();
+            invalidate();
+        }
+
+        private void releaseAllPressedStates() {
+            clearAllPressedStates();
+        }
+
+        private VirtualButton findButtonAt(float x, float y) {
+            for (int i = 0; i < buttons.size(); i++) {
+                VirtualButton btn = buttons.get(i);
+                if (btn.hitRect.contains((int) x, (int) y)) {
+                    return btn;
+                }
+            }
+            return null;
+        }
+
+        private boolean handleEditTouch(MotionEvent event) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN: {
+                    VirtualButton btn = findButtonAt(event.getX(), event.getY());
+                    if (btn == null) {
+                        return true;
+                    }
+
+                    selectButton(btn);
+
+                    dragStartX = event.getX();
+                    dragStartY = event.getY();
+                    originLeft = btn.bounds.left;
+                    originTop = btn.bounds.top;
+                    return true;
+                }
+
+                case MotionEvent.ACTION_MOVE: {
+                    if (selectedButton == null) {
+                        return true;
+                    }
+
+                    float dx = event.getX() - dragStartX;
+                    float dy = event.getY() - dragStartY;
+
+                    float newLeft = originLeft + dx;
+                    float newTop = originTop + dy;
+
+                    float gridPx = dpToPx(GRID_SIZE_DP);
+
+                    newLeft = Math.round(newLeft / gridPx) * gridPx;
+                    newTop = Math.round(newTop / gridPx) * gridPx;
+
+                    float maxLeft = Math.max(0, getWidth() - selectedButton.getWidthPx());
+                    float maxTop = Math.max(0, getHeight() - selectedButton.getHeightPx());
+
+                    newLeft = clamp(newLeft, 0f, maxLeft);
+                    newTop = clamp(newTop, 0f, maxTop);
+
+                    selectedButton.setBounds(newLeft, newTop);
+                    invalidate();
+                    return true;
+                }
+
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    return true;
+            }
+
+            return true;
+        }
+
+        private boolean handleGameTouch(MotionEvent event) {
+            WebView webView = getCurrentWebView();
+            if (webView == null) {
+                return false;
+            }
+
+            int action = event.getActionMasked();
+            int actionIndex = event.getActionIndex();
+
+            switch (action) {
+                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_POINTER_DOWN: {
+                    int pointerId = event.getPointerId(actionIndex);
+                    VirtualButton btn = findButtonAt(event.getX(actionIndex), event.getY(actionIndex));
+
+                    pointerButtonMap.put(pointerId, btn);
+                    pressButton(webView, btn);
+                    return true;
+                }
+
+                case MotionEvent.ACTION_MOVE: {
+                    int pointerCount = event.getPointerCount();
+
+                    for (int i = 0; i < pointerCount; i++) {
+                        int pointerId = event.getPointerId(i);
+                        VirtualButton oldBtn = pointerButtonMap.get(pointerId);
+                        VirtualButton newBtn = findButtonAt(event.getX(i), event.getY(i));
+
+                        if (oldBtn != newBtn) {
+                            releaseButton(webView, oldBtn);
+                            pressButton(webView, newBtn);
+                            pointerButtonMap.put(pointerId, newBtn);
+                        }
+                    }
+
+                    return true;
+                }
+
+                case MotionEvent.ACTION_POINTER_UP:
+                case MotionEvent.ACTION_UP: {
+                    int pointerId = event.getPointerId(actionIndex);
+                    VirtualButton btn = pointerButtonMap.get(pointerId);
+
+                    releaseButton(webView, btn);
+                    pointerButtonMap.remove(pointerId);
+                    return true;
+                }
+
+                case MotionEvent.ACTION_CANCEL: {
+                    clearAllPressedStates();
+                    return true;
+                }
+            }
+
+            return true;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+
+            if (!isPadVisible) {
+                return;
+            }
+
+            for (VirtualButton btn : buttons) {
+                Paint fill = btn.isCurrentPressed ? pressedPaint : buttonPaint;
+                canvas.drawRoundRect(btn.bounds, dpToPx(12), dpToPx(12), fill);
+
+                if (btn.selected) {
+                    canvas.drawRoundRect(btn.bounds, dpToPx(12), dpToPx(12), selectedBorderPaint);
+                }
+
+                float cx = btn.bounds.centerX();
+                float cy = btn.bounds.centerY() - ((textPaint.descent() + textPaint.ascent()) / 2f);
+                canvas.drawText(btn.label, cx, cy, textPaint);
+            }
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            if (!isPadVisible) {
+                return false;
+            }
+
+            if (isEditMode) {
+                return handleEditTouch(event);
+            }
+
+            return handleGameTouch(event);
         }
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
         }
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             WindowManager.LayoutParams lp = getWindow().getAttributes();
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
@@ -103,7 +470,8 @@ public class MainActivity extends BridgeActivity {
 
         try {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 WindowInsetsController controller = getWindow().getInsetsController();
                 if (controller != null) {
                     controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
@@ -117,7 +485,7 @@ public class MainActivity extends BridgeActivity {
                 );
             }
         } catch (Exception e) {
-            Log.e(TAG, "해상도 몰입 모드 초기화 실패: " + e.getMessage());
+            Log.e(TAG, "해상도 몰입 모드 초기화 실패: " + e.getMessage(), e);
         }
 
         getWindow().getDecorView().post(new Runnable() {
@@ -135,53 +503,152 @@ public class MainActivity extends BridgeActivity {
     private void setupAdvancedModularSystem() {
         FrameLayout rootView = findViewById(android.R.id.content);
         if (rootView == null) return;
-        
+
         if (getBridge() != null && getBridge().getWebView() != null) {
             optimizeWebViewPerformance(getBridge().getWebView());
         }
 
-        final FrameLayout combinedPad = new FrameLayout(this);
+        combinedPad = new GamePadOverlay(this);
         combinedPad.setLayoutParams(new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
-        combinedPad.setBackgroundColor(Color.parseColor("#00000000")); 
+        combinedPad.setBackgroundColor(Color.TRANSPARENT);
 
+        createVirtualButtons();
+        createUtilityControls(combinedPad);
+        setupEditModeInteraction();
+
+        rootView.addView(combinedPad);
+
+        combinedPad.post(new Runnable() {
+            @Override
+            public void run() {
+                combinedPad.initializeButtonLayouts();
+            }
+        });
+    }
+
+    private void createVirtualButtons() {
+        if (combinedPad == null) return;
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "left",
+                "←",
+                new int[]{KeyEvent.KEYCODE_DPAD_LEFT},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "soft_drop",
+                "↓",
+                new int[]{KeyEvent.KEYCODE_DPAD_DOWN},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "right",
+                "→",
+                new int[]{KeyEvent.KEYCODE_DPAD_RIGHT},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "l_soft",
+                "↙",
+                new int[]{KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "r_soft",
+                "↘",
+                new int[]{KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "hold",
+                "C",
+                new int[]{KeyEvent.KEYCODE_C},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "rotate_ccw",
+                "Z",
+                new int[]{KeyEvent.KEYCODE_Z},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "rotate_cw",
+                "X",
+                new int[]{KeyEvent.KEYCODE_DPAD_UP},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "rotate_180",
+                "A",
+                new int[]{KeyEvent.KEYCODE_A},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "hard_drop",
+                "□",
+                new int[]{KeyEvent.KEYCODE_SPACE},
+                100,
+                100
+        ));
+    }
+
+    private void createUtilityControls(FrameLayout parent) {
         btnVisibilityToggle = new Button(this);
         btnVisibilityToggle.setText("●");
         FrameLayout.LayoutParams visParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
         visParams.gravity = Gravity.TOP | Gravity.LEFT;
         visParams.setMargins(dpToPx(15), dpToPx(15), 0, 0);
         btnVisibilityToggle.setLayoutParams(visParams);
-        btnVisibilityToggle.setBackgroundColor(Color.parseColor("#66000000")); 
+        btnVisibilityToggle.setBackgroundColor(Color.parseColor("#66000000"));
         btnVisibilityToggle.setTextColor(Color.WHITE);
         btnVisibilityToggle.setTextSize(16);
 
-        final Button btnEsc = new Button(this);
+        btnEsc = new Button(this);
         btnEsc.setText("×");
         FrameLayout.LayoutParams escParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
         escParams.gravity = Gravity.TOP | Gravity.LEFT;
-        escParams.setMargins(dpToPx(15 + 50 + 8), dpToPx(15), 0, 0); 
+        escParams.setMargins(dpToPx(15 + 50 + 8), dpToPx(15), 0, 0);
         btnEsc.setLayoutParams(escParams);
         btnEsc.setBackgroundColor(Color.parseColor("#66000000"));
         btnEsc.setTextColor(Color.WHITE);
         btnEsc.setTextSize(16);
 
-        final Button btnR = new Button(this);
+        btnR = new Button(this);
         btnR.setText("R");
         FrameLayout.LayoutParams rParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
         rParams.gravity = Gravity.TOP | Gravity.LEFT;
-        rParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8), dpToPx(15), 0, 0); 
+        rParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8), dpToPx(15), 0, 0);
         btnR.setLayoutParams(rParams);
         btnR.setBackgroundColor(Color.parseColor("#66000000"));
         btnR.setTextColor(Color.WHITE);
         btnR.setTextSize(14);
 
-        final Button btnEnter = new Button(this);
+        btnEnter = new Button(this);
         btnEnter.setText("<");
         FrameLayout.LayoutParams enterParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
         enterParams.gravity = Gravity.TOP | Gravity.LEFT;
-        enterParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8+ 50 + 8), dpToPx(15), 0, 0); 
+        enterParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8 + 50 + 8), dpToPx(15), 0, 0);
         btnEnter.setLayoutParams(enterParams);
         btnEnter.setBackgroundColor(Color.parseColor("#66000000"));
         btnEnter.setTextColor(Color.WHITE);
@@ -190,9 +657,9 @@ public class MainActivity extends BridgeActivity {
         View.OnTouchListener utilityTouchListener = new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                if (getBridge() == null || getBridge().getWebView() == null) return false;
-                WebView webView = getBridge().getWebView();
-                
+                WebView webView = getCurrentWebView();
+                if (webView == null) return false;
+
                 int keyCode;
                 if (v == btnEsc) {
                     keyCode = KeyEvent.KEYCODE_ESCAPE;
@@ -201,8 +668,8 @@ public class MainActivity extends BridgeActivity {
                 } else {
                     keyCode = KeyEvent.KEYCODE_ENTER;
                 }
-                
-                int action = event.getAction();
+
+                int action = event.getActionMasked();
                 if (action == MotionEvent.ACTION_DOWN) {
                     sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, keyCode);
                     return true;
@@ -210,9 +677,11 @@ public class MainActivity extends BridgeActivity {
                     sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, keyCode);
                     return true;
                 }
+
                 return false;
             }
         };
+
         btnEsc.setOnTouchListener(utilityTouchListener);
         btnR.setOnTouchListener(utilityTouchListener);
         btnEnter.setOnTouchListener(utilityTouchListener);
@@ -223,7 +692,7 @@ public class MainActivity extends BridgeActivity {
         toggleParams.gravity = Gravity.TOP | Gravity.RIGHT;
         toggleParams.setMargins(0, dpToPx(15), dpToPx(15), 0);
         btnEditToggle.setLayoutParams(toggleParams);
-        btnEditToggle.setBackgroundColor(Color.parseColor("#66000000")); 
+        btnEditToggle.setBackgroundColor(Color.parseColor("#66000000"));
         btnEditToggle.setTextColor(Color.WHITE);
         btnEditToggle.setTextSize(13);
 
@@ -231,13 +700,15 @@ public class MainActivity extends BridgeActivity {
         sizeBar.setOrientation(LinearLayout.HORIZONTAL);
         sizeBar.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout.LayoutParams sizeBarParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dpToPx(50));
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dpToPx(50)
+        );
         sizeBarParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
         sizeBarParams.setMargins(0, dpToPx(15), 0, 0);
         sizeBar.setLayoutParams(sizeBarParams);
-        sizeBar.setBackgroundColor(Color.parseColor("#DD222222")); 
+        sizeBar.setBackgroundColor(Color.parseColor("#DD222222"));
         sizeBar.setPadding(dpToPx(15), 0, dpToPx(15), 0);
-        sizeBar.setVisibility(View.GONE); 
+        sizeBar.setVisibility(View.GONE);
 
         Button btnMinus = new Button(this);
         btnMinus.setText("-");
@@ -252,7 +723,9 @@ public class MainActivity extends BridgeActivity {
         tvScale.setTextColor(Color.WHITE);
         tvScale.setTextSize(14);
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
         textParams.setMargins(dpToPx(15), 0, dpToPx(15), 0);
         tvScale.setLayoutParams(textParams);
 
@@ -267,238 +740,137 @@ public class MainActivity extends BridgeActivity {
         sizeBar.addView(tvScale);
         sizeBar.addView(btnPlus);
 
-        GameButton btnLeft = createGameButton("←", new int[]{KeyEvent.KEYCODE_DPAD_LEFT}, 100, 100);
-        GameButton btnSoftDrop = createGameButton("↓", new int[]{KeyEvent.KEYCODE_DPAD_DOWN}, 100, 100);
-        GameButton btnRight = createGameButton("→", new int[]{KeyEvent.KEYCODE_DPAD_RIGHT}, 100, 100);
-        GameButton btnLSoft = createGameButton("↙", new int[]{KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN}, 100, 100);
-        GameButton btnRSoft = createGameButton("↘", new int[]{KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN}, 100, 100);
-
-        GameButton btnHold = createGameButton("C", new int[]{KeyEvent.KEYCODE_C}, 100, 100);
-        GameButton btnRotateCCW = createGameButton("Z", new int[]{KeyEvent.KEYCODE_Z}, 100, 100);
-        GameButton btnRotateCW = createGameButton("X", new int[]{KeyEvent.KEYCODE_DPAD_UP}, 100, 100);
-        GameButton btnRotate180 = createGameButton("A", new int[]{KeyEvent.KEYCODE_A}, 100, 100); 
-        GameButton btnHardDrop = createGameButton("□", new int[]{KeyEvent.KEYCODE_SPACE}, 100, 100);
-
-        initAndLoadButtonLayout(btnLeft, Gravity.BOTTOM | Gravity.LEFT, 20, 20 + 100 + 10);
-        initAndLoadButtonLayout(btnSoftDrop, Gravity.BOTTOM | Gravity.LEFT, 20 + 100 + 10, 20 + 100 + 10);
-        initAndLoadButtonLayout(btnRight, Gravity.BOTTOM | Gravity.LEFT, 20 + 100 + 10 + 100 + 10, 20 + 100 + 10);
-        initAndLoadButtonLayout(btnLSoft, Gravity.BOTTOM | Gravity.LEFT, 20, 20);
-        initAndLoadButtonLayout(btnRSoft, Gravity.BOTTOM | Gravity.LEFT, 20 + 100 + 10 + 100 + 10, 20);
-
-        initAndLoadButtonLayout(btnHardDrop, Gravity.BOTTOM | Gravity.RIGHT, 20, 20);
-        initAndLoadButtonLayout(btnRotateCW, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10, 20);
-        initAndLoadButtonLayout(btnRotateCCW, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10 + 100 + 10, 20);
-        initAndLoadButtonLayout(btnRotate180, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10, 20 + 100 + 10);
-        initAndLoadButtonLayout(btnHold, Gravity.BOTTOM | Gravity.RIGHT, 20 + 90 + 10 + 100 + 10, 20 + 100 + 10);
-
-        combinedPad.addView(btnLeft);
-        combinedPad.addView(btnSoftDrop);
-        combinedPad.addView(btnRight);
-        combinedPad.addView(btnLSoft);
-        combinedPad.addView(btnRSoft);
-        combinedPad.addView(btnHold);
-        combinedPad.addView(btnRotateCCW);
-        combinedPad.addView(btnRotateCW);
-        combinedPad.addView(btnRotate180);
-        combinedPad.addView(btnHardDrop);
-        
-        combinedPad.addView(btnEsc);
-        combinedPad.addView(btnR);
-        combinedPad.addView(btnEnter);
-        combinedPad.addView(btnEditToggle);
-        combinedPad.addView(btnVisibilityToggle);
-        combinedPad.addView(sizeBar);
-
-        setupOptimizedHoverEngine(combinedPad);
-        setupEditModeInteraction(combinedPad);
-
-        btnVisibilityToggle.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                isPadVisible = !isPadVisible;
-                if (!isPadVisible) {
-                    btnVisibilityToggle.setText("○"); 
-
-                    if (isEditMode) {
-                        isEditMode = false;
-                        btnEditToggle.setText("Edit");
-                        sizeBar.setVisibility(View.GONE);
-                        if (selectedButton != null) {
-                            selectedButton.setAlpha(1.0f);
-                            selectedButton = null;
-                        }
-                    }
-                    clearHoverOperationalStates();
-
-                    btnEditToggle.setVisibility(View.GONE);
-                    btnEsc.setVisibility(View.GONE);
-                    btnR.setVisibility(View.GONE);
-                    btnEnter.setVisibility(View.GONE);
-                    
-                    for (int i = 0; i < gameButtons.size(); i++) {
-                        gameButtons.get(i).setVisibility(View.GONE);
-                    }
-                } else {
-                    btnVisibilityToggle.setText("●"); 
-                    btnEditToggle.setVisibility(View.VISIBLE);
-                    btnEsc.setVisibility(View.VISIBLE);
-                    btnR.setVisibility(View.VISIBLE);
-                    btnEnter.setVisibility(View.VISIBLE);
-                    for (int i = 0; i < gameButtons.size(); i++) {
-                        gameButtons.get(i).setVisibility(View.VISIBLE);
-                    }
-                }
-            }
-        });
-
         btnPlus.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (selectedButton != null) {
-                    selectedButton.changeScale(0.1f);
-                    refreshScaleText();
-                }
+                resizeSelectedButton(0.1f);
             }
         });
 
         btnMinus.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (selectedButton != null) {
-                    selectedButton.changeScale(-0.1f);
-                    refreshScaleText();
-                }
+                resizeSelectedButton(-0.1f);
             }
         });
 
-        rootView.addView(combinedPad);
+        parent.addView(btnVisibilityToggle);
+        parent.addView(btnEsc);
+        parent.addView(btnR);
+        parent.addView(btnEnter);
+        parent.addView(btnEditToggle);
+        parent.addView(sizeBar);
+
+        btnVisibilityToggle.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                isPadVisible = !isPadVisible;
+
+                if (!isPadVisible) {
+                    btnVisibilityToggle.setText("○");
+
+                    if (isEditMode) {
+                        isEditMode = false;
+                        btnEditToggle.setText("Edit");
+                        sizeBar.setVisibility(View.GONE);
+                        clearSelectedButton();
+                    }
+
+                    clearHoverOperationalStates();
+
+                    btnEditToggle.setVisibility(View.GONE);
+                    btnEsc.setVisibility(View.GONE);
+                    btnR.setVisibility(View.GONE);
+                    btnEnter.setVisibility(View.GONE);
+                } else {
+                    btnVisibilityToggle.setText("●");
+                    btnEditToggle.setVisibility(View.VISIBLE);
+                    btnEsc.setVisibility(View.VISIBLE);
+                    btnR.setVisibility(View.VISIBLE);
+                    btnEnter.setVisibility(View.VISIBLE);
+
+                    if (combinedPad != null) {
+                        combinedPad.setPadVisible(true);
+                        combinedPad.invalidate();
+                    }
+                }
+
+                if (combinedPad != null) {
+                    combinedPad.setPadVisible(isPadVisible);
+                }
+            }
+        });
+    }
+
+    private void setupEditModeInteraction() {
+        btnEditToggle.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!isPadVisible) return;
+
+                if (isEditMode) {
+                    isEditMode = false;
+                    btnEditToggle.setText("Edit");
+                    sizeBar.setVisibility(View.GONE);
+
+                    if (selectedButton != null) {
+                        selectedButton.selected = false;
+                        selectedButton = null;
+                    }
+
+                    executeSaveCurrentLayouts();
+                    if (combinedPad != null) {
+                        combinedPad.invalidate();
+                    }
+                } else {
+                    isEditMode = true;
+                    btnEditToggle.setText("Save");
+                    clearHoverOperationalStates();
+
+                    if (selectedButton != null) {
+                        selectedButton.selected = false;
+                        selectedButton = null;
+                    }
+                    sizeBar.setVisibility(View.GONE);
+                    if (combinedPad != null) {
+                        combinedPad.invalidate();
+                    }
+                }
+            }
+        });
     }
 
     private void executeSaveCurrentLayouts() {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        SharedPreferences.Editor editor = prefs.edit();
-
-        for (int i = 0; i < gameButtons.size(); i++) {
-            GameButton btn = gameButtons.get(i);
-            String key = btn.getText().toString();
-            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) btn.getLayoutParams();
-            
-            btn.hitbox.set(btn.getLeft(), btn.getTop(), btn.getRight(), btn.getBottom());
-            
-            editor.putInt(key + "_leftMargin", lp.leftMargin);
-            editor.putInt(key + "_rightMargin", lp.rightMargin);
-            editor.putInt(key + "_topMargin", lp.topMargin);
-            editor.putInt(key + "_bottomMargin", lp.bottomMargin);
-            editor.putInt(key + "_gravity", lp.gravity);
-            editor.putFloat(key + "_scaleFactor", btn.scaleFactor);
-        }
-        editor.apply();
+        if (combinedPad == null) return;
+        combinedPad.saveLayoutsToPrefs();
     }
 
-    private void initAndLoadButtonLayout(GameButton btn, int defaultGravity, int marginXDp, int marginYDp) {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        String key = btn.getText().toString();
-
-        if (prefs.contains(key + "_gravity")) {
-            int savedGravity = prefs.getInt(key + "_gravity", defaultGravity);
-            float savedScale = prefs.getFloat(key + "_scaleFactor", 1.0f);
-            btn.scaleFactor = savedScale;
-
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                    dpToPx((int) (btn.baseWidthDp * savedScale)), dpToPx((int) (btn.baseHeightDp * savedScale)));
-            lp.gravity = savedGravity;
-            lp.leftMargin = prefs.getInt(key + "_leftMargin", 0);
-            lp.rightMargin = prefs.getInt(key + "_rightMargin", 0);
-            lp.topMargin = prefs.getInt(key + "_topMargin", 0);
-            lp.bottomMargin = prefs.getInt(key + "_bottomMargin", 0);
-            btn.setLayoutParams(lp);
-        } else {
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dpToPx(btn.baseWidthDp), dpToPx(btn.baseHeightDp));
-            lp.gravity = defaultGravity;
-            if ((defaultGravity & Gravity.LEFT) == Gravity.LEFT) lp.leftMargin = dpToPx(marginXDp);
-            if ((defaultGravity & Gravity.RIGHT) == Gravity.RIGHT) lp.rightMargin = dpToPx(marginXDp);
-            if ((defaultGravity & Gravity.BOTTOM) == Gravity.BOTTOM) lp.bottomMargin = dpToPx(marginYDp);
-            if ((defaultGravity & Gravity.TOP) == Gravity.TOP) lp.topMargin = dpToPx(marginYDp);
-            btn.setLayoutParams(lp);
+    private void clearHoverOperationalStates() {
+        if (combinedPad != null) {
+            combinedPad.clearAllPressedStates();
         }
     }
 
-    private GameButton createGameButton(String text, final int[] androidKeyCodes, int widthDp, int heightDp) {
-        final GameButton button = new GameButton(this, androidKeyCodes, widthDp, heightDp);
-        button.setText(text);
-        button.setTextSize(14);
-        button.setPadding(0, 0, 0, 0);
-        button.setBackgroundColor(Color.parseColor("#66000000")); 
-        button.setTextColor(Color.WHITE); 
-        button.setClickable(false); 
-
-        button.setOnTouchListener(new View.OnTouchListener() {
-            private float startX, startY;
-            private int initLeft, initBottom, initRight, initTop;
-
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (!isPadVisible || !isEditMode) return false; 
-
-                GameButton btn = (GameButton) v;
-                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) btn.getLayoutParams();
-
-                int action = event.getAction();
-                if (action == MotionEvent.ACTION_DOWN) {
-                    executeButtonSelection(btn);
-                    startX = event.getRawX();
-                    startY = event.getRawY();
-                    initLeft = lp.leftMargin;
-                    initBottom = lp.bottomMargin;
-                    initRight = lp.rightMargin;
-                    initTop = lp.topMargin;
-                } else if (action == MotionEvent.ACTION_MOVE) {
-                    float diffX = event.getRawX() - startX;
-                    float diffY = event.getRawY() - startY;
-
-                    if ((lp.gravity & Gravity.LEFT) == Gravity.LEFT) {
-                        int initLeftDp = Math.round(initLeft / displayDensity);
-                        int targetLeftDp = initLeftDp + Math.round(diffX / displayDensity);
-                        int snappedLeftDp = Math.round((float) targetLeftDp / GRID_SIZE_DP) * GRID_SIZE_DP;
-                        lp.leftMargin = dpToPx(snappedLeftDp);
-                    } else if ((lp.gravity & Gravity.RIGHT) == Gravity.RIGHT) {
-                        int initRightDp = Math.round(initRight / displayDensity);
-                        int targetRightDp = initRightDp - Math.round(diffX / displayDensity);
-                        int snappedRightDp = Math.round((float) targetRightDp / GRID_SIZE_DP) * GRID_SIZE_DP;
-                        lp.rightMargin = dpToPx(snappedRightDp);
-                    }
-
-                    if ((lp.gravity & Gravity.BOTTOM) == Gravity.BOTTOM) {
-                        int initBottomDp = Math.round(initBottom / displayDensity);
-                        int targetBottomDp = initBottomDp - Math.round(diffY / displayDensity);
-                        int snappedBottomDp = Math.round((float) targetBottomDp / GRID_SIZE_DP) * GRID_SIZE_DP;
-                        lp.bottomMargin = dpToPx(snappedBottomDp);
-                    } else if ((lp.gravity & Gravity.TOP) == Gravity.TOP) {
-                        int initTopDp = Math.round(initTop / displayDensity);
-                        int targetTopDp = initTopDp + Math.round(diffY / displayDensity);
-                        int snappedTopDp = Math.round((float) targetTopDp / GRID_SIZE_DP) * GRID_SIZE_DP;
-                        lp.topMargin = dpToPx(snappedTopDp);
-                    }
-
-                    btn.setLayoutParams(lp);
-                }
-                return false; 
-            }
-        });
-
-        gameButtons.add(button); 
-        return button;
-    }
-
-
-    private void executeButtonSelection(GameButton btn) {
+    private void selectButton(VirtualButton btn) {
         if (selectedButton != null) {
-            selectedButton.setAlpha(1.0f);
+            selectedButton.selected = false;
         }
+
         selectedButton = btn;
-        selectedButton.setAlpha(0.6f);
+        selectedButton.selected = true;
         sizeBar.setVisibility(View.VISIBLE);
         refreshScaleText();
+
+        if (combinedPad != null) {
+            combinedPad.invalidate();
+        }
+    }
+
+    private void clearSelectedButton() {
+        if (selectedButton != null) {
+            selectedButton.selected = false;
+            selectedButton = null;
+        }
     }
 
     private void refreshScaleText() {
@@ -508,204 +880,75 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    private void setupEditModeInteraction(final FrameLayout pad) {
-        btnEditToggle.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!isPadVisible) return; 
-                
-                if (isEditMode) {
-                    isEditMode = false;
-                    btnEditToggle.setText("Edit");
-                    sizeBar.setVisibility(View.GONE);
-                    if (selectedButton != null) {
-                        selectedButton.setAlpha(1.0f);
-                        selectedButton = null;
-                    }
-                    executeSaveCurrentLayouts(); 
-                } else {
-                    isEditMode = true;
-                    btnEditToggle.setText("Save");
-                    clearHoverOperationalStates();
-                }
-            }
-        });
-    }
-
-    private void setupOptimizedHoverEngine(final FrameLayout pad) {
-    pad.setOnTouchListener((v, event) -> {
-
-        if (!isPadVisible || isEditMode) return false;
-
-        if (getBridge() == null) return false;
-
-        WebView webView = getBridge().getWebView();
-        if (webView == null) return false;
-
-        int action = event.getActionMasked();
-        int actionIndex = event.getActionIndex();
-
-        switch (action) {
-
-            case MotionEvent.ACTION_DOWN:
-            case MotionEvent.ACTION_POINTER_DOWN: {
-
-                int pointerId = event.getPointerId(actionIndex);
-
-                GameButton btn = findButtonAt(
-                        event.getX(actionIndex),
-                        event.getY(actionIndex)
-                );
-
-                pointerButtonMap.put(pointerId, btn);
-                pressButton(webView, btn);
-                break;
-            }
-
-            case MotionEvent.ACTION_MOVE: {
-
-                int pointerCount = event.getPointerCount();
-
-                for (int i = 0; i < pointerCount; i++) {
-
-                    int pointerId = event.getPointerId(i);
-
-                    GameButton oldBtn = pointerButtonMap.get(pointerId);
-
-                    GameButton newBtn = findButtonAt(
-                            event.getX(i),
-                            event.getY(i)
-                    );
-
-                    if (oldBtn != newBtn) {
-                        releaseButton(webView, oldBtn);
-                        pressButton(webView, newBtn);
-                        pointerButtonMap.put(pointerId, newBtn);
-                    }
-                }
-
-                break;
-            }
-
-            case MotionEvent.ACTION_POINTER_UP:
-            case MotionEvent.ACTION_UP: {
-
-                int pointerId = event.getPointerId(actionIndex);
-
-                GameButton btn = pointerButtonMap.get(pointerId);
-
-                releaseButton(webView, btn);
-                pointerButtonMap.remove(pointerId);
-
-                break;
-            }
-
-            case MotionEvent.ACTION_CANCEL: {
-
-                HashSet<GameButton> uniqueButtons = new HashSet<>();
-
-                for (int i = 0; i < pointerButtonMap.size(); i++) {
-                    GameButton btn = pointerButtonMap.valueAt(i);
-                
-                    if (btn != null) {
-                        uniqueButtons.add(btn);
-                    }
-                }
-                
-                for (GameButton btn : uniqueButtons) {
-                
-                    btn.activePointerCount = 0;
-                
-                    if (btn.isCurrentPressed) {
-                
-                        btn.isCurrentPressed = false;
-                
-                        for (int code : btn.androidKeyCodes) {
-                            sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
-                        }
-                    }
-                }
-
-                pointerButtonMap.clear();
-                break;
-            }
+    private void resizeSelectedButton(float delta) {
+        if (selectedButton == null || combinedPad == null) {
+            return;
         }
 
-        return true;
-    });
-}
+        selectedButton.scaleFactor += delta;
+        selectedButton.scaleFactor = clamp(selectedButton.scaleFactor, 0.5f, 2.0f);
 
-    private void clearHoverOperationalStates() {
-        if (getBridge() == null || getBridge().getWebView() == null) return;
-        WebView webView = getBridge().getWebView();
-        int buttonSize = gameButtons.size();
-        for (int i = 0; i < buttonSize; i++) {
-            GameButton btn = gameButtons.get(i);
-            if (btn.isCurrentPressed) {
-                btn.isCurrentPressed = false;
-                btn.activePointerCount = 0;
-                
-                for (int code : btn.androidKeyCodes) {
-                    sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
-                }
-            }
-        }
-        
-        pointerButtonMap.clear();
+        float left = selectedButton.bounds.left;
+        float top = selectedButton.bounds.top;
+
+        selectedButton.setBounds(left, top);
+        refreshScaleText();
+        combinedPad.invalidate();
     }
 
-    private GameButton findButtonAt(float x, float y) {
-        for (int i = 0; i < gameButtons.size(); i++) {
-            GameButton btn = gameButtons.get(i);
-    
-            if (!btn.hitbox.isEmpty() &&
-                btn.hitbox.contains((int)x, (int)y)) {
-                return btn;
-            }
-        }
-        return null;
+    private WebView getCurrentWebView() {
+        if (getBridge() == null) return null;
+        return getBridge().getWebView();
     }
 
-    private void pressButton(WebView webView, GameButton btn) {
+    private void pressButton(WebView webView, VirtualButton btn) {
         if (btn == null) return;
-    
+
         btn.activePointerCount++;
-    
+
         if (btn.activePointerCount == 1) {
             btn.isCurrentPressed = true;
-    
+
             for (int code : btn.androidKeyCodes) {
                 sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
             }
         }
+
+        if (combinedPad != null) {
+            combinedPad.invalidate();
+        }
     }
-    
-    private void releaseButton(WebView webView, GameButton btn) {
+
+    private void releaseButton(WebView webView, VirtualButton btn) {
         if (btn == null) return;
-    
+
         if (btn.activePointerCount > 0) {
             btn.activePointerCount--;
         }
-    
+
         if (btn.activePointerCount == 0 && btn.isCurrentPressed) {
             btn.isCurrentPressed = false;
-    
+
             for (int code : btn.androidKeyCodes) {
                 sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
             }
         }
+
+        if (combinedPad != null) {
+            combinedPad.invalidate();
+        }
     }
 
     private void sendNativeKeyEvent(WebView webView, int keyAction, int androidKeyCode) {
-        if (!webView.hasFocus()) {
-            webView.requestFocus();
-        }
-        
         webView.dispatchKeyEvent(new KeyEvent(keyAction, androidKeyCode));
     }
 
     private int dpToPx(int dp) {
-        return (int) (dp * displayDensity);
+        return Math.round(dp * displayDensity);
+    }
+
+    private float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private void optimizeWebViewPerformance(WebView webView) {
@@ -719,42 +962,42 @@ public class MainActivity extends BridgeActivity {
                 public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, android.webkit.WebResourceRequest request) {
                     String url = request.getUrl().toString();
 
-                    if (url.contains("googleads") || 
-                        url.contains("doubleclick") || 
-                        url.contains("adnxs") || 
-                        url.contains("adservice") || 
-                        url.contains("pagead")) {
-                        
+                    if (url.contains("googleads") ||
+                            url.contains("doubleclick") ||
+                            url.contains("adnxs") ||
+                            url.contains("adservice") ||
+                            url.contains("pagead")) {
+
                         return new android.webkit.WebResourceResponse(
-                            "text/plain", 
-                            "UTF-8", 
-                            new java.io.ByteArrayInputStream("".getBytes())
+                                "text/plain",
+                                "UTF-8",
+                                new java.io.ByteArrayInputStream("".getBytes())
                         );
                     }
-                    
+
                     return super.shouldInterceptRequest(view, request);
                 }
             });
 
-            
             android.webkit.WebSettings settings = webView.getSettings();
-            
+
             settings.setJavaScriptEnabled(true);
-            settings.setDomStorageEnabled(true); 
+            settings.setDomStorageEnabled(true);
             settings.setDatabaseEnabled(true);
             settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
             settings.setLoadsImagesAutomatically(true);
-            settings.setMediaPlaybackRequiresUserGesture(false); 
+            settings.setMediaPlaybackRequiresUserGesture(false);
+
             webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
-            
+
             if (getWindow() != null) {
                 getWindow().setFlags(
-                    android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-                    android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
                 );
             }
         } catch (Exception e) {
-            Log.e(TAG, "웹뷰 가속 엔진 빌드 실패: " + e.getMessage());
+            Log.e(TAG, "웹뷰 가속 엔진 빌드 실패: " + e.getMessage(), e);
         }
     }
 }
