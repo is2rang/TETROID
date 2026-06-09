@@ -700,7 +700,7 @@ public class MainActivity extends BridgeActivity {
         );
         sizeBarParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
         sizeBarParams.setMargins(0, dpToPx(15), 0, 0);
-        sizeBar.setLayoutParams(Params);
+        sizeBar.setLayoutParams(sizeBarParams);
         sizeBar.setBackgroundColor(Color.parseColor("#DD222222"));
         sizeBar.setPadding(dpToPx(15), 0, dpToPx(15), 0);
         sizeBar.setVisibility(View.GONE);
