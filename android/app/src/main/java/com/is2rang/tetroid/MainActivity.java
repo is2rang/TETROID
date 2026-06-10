@@ -8,26 +8,30 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.SystemClock;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.view.InputDevice;
-import android.view.KeyCharacterMap;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.webkit.WebMessage;
+import android.webkit.WebMessagePort;
 import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.webkit.WebMessageCompat;
+import androidx.webkit.WebMessagePortCompat;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -51,8 +55,6 @@ public class MainActivity extends BridgeActivity {
     private float displayDensity;
 
     private GamePadOverlay combinedPad;
-    
-    private final SparseArray<Long> keyByDownTimes = new SparseArray<>();
 
     private LinearLayout sizeBar;
     private TextView tvScale;
@@ -61,12 +63,16 @@ public class MainActivity extends BridgeActivity {
     private Button btnEsc;
     private Button btnR;
 
+    // 네이티브와 JS 간 초고속 데이터 전송을 위한 메시지 포트
+    private WebMessagePort nativePort;
+
     private class VirtualButton {
         final String saveKey;
         final String label;
         final RectF bounds = new RectF();
         final Rect hitRect = new Rect();
-        final int[] androidKeyCodes;
+        // 안드로이드 키코드 대신 표준 Gamepad API 버튼 인덱스 매핑 배열 사용
+        final int[] gamepadButtonIndices;
 
         boolean isCurrentPressed = false;
         int activePointerCount = 0;
@@ -76,10 +82,10 @@ public class MainActivity extends BridgeActivity {
         final int baseHeightDp;
         float scaleFactor = 1.0f;
 
-        VirtualButton(String saveKey, String label, int[] keyCodes, int baseWidthDp, int baseHeightDp) {
+        VirtualButton(String saveKey, String label, int[] gamepadButtonIndices, int baseWidthDp, int baseHeightDp) {
             this.saveKey = saveKey;
             this.label = label;
-            this.androidKeyCodes = keyCodes;
+            this.gamepadButtonIndices = gamepadButtonIndices;
             this.baseWidthDp = baseWidthDp;
             this.baseHeightDp = baseHeightDp;
         }
@@ -285,8 +291,8 @@ public class MainActivity extends BridgeActivity {
                 if (btn.isCurrentPressed) {
                     btn.isCurrentPressed = false;
                     btn.activePointerCount = 0;
-                    for (int code : btn.androidKeyCodes) {
-                        sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
+                    for (int index : btn.gamepadButtonIndices) {
+                        sendGamepadStateToJs(index, false);
                     }
                 }
             }
@@ -429,6 +435,10 @@ public class MainActivity extends BridgeActivity {
             for (VirtualButton btn : buttons) {
                 canvas.drawRect(btn.bounds, buttonPaint);
 
+                if (isEditMode && btn.selected) {
+                    canvas.drawRect(btn.bounds, selectedBorderPaint);
+                }
+
                 float cx = btn.bounds.centerX();
                 float cy = btn.bounds.centerY() - ((textPaint.descent() + textPaint.ascent()) / 2f);
                 canvas.drawText(btn.label, cx, cy, textPaint);
@@ -532,10 +542,12 @@ public class MainActivity extends BridgeActivity {
     private void createVirtualButtons() {
         if (combinedPad == null) return;
 
+        // W3C Standard Gamepad Mapping 인덱스 기준 매핑
+        // 0:A, 1:B, 2:X, 3:Y, 4:L1, 5:R1, 6:L2, 7:R2, 12:Up, 13:Down, 14:Left, 15:Right
         combinedPad.addVirtualButton(new VirtualButton(
                 "left",
                 "←",
-                new int[]{KeyEvent.KEYCODE_DPAD_LEFT},
+                new int[]{14}, // DPAD LEFT
                 100,
                 100
         ));
@@ -543,7 +555,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "soft_drop",
                 "↓",
-                new int[]{KeyEvent.KEYCODE_DPAD_DOWN},
+                new int[]{13}, // DPAD DOWN
                 100,
                 100
         ));
@@ -551,7 +563,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "right",
                 "→",
-                new int[]{KeyEvent.KEYCODE_DPAD_RIGHT},
+                new int[]{15}, // DPAD RIGHT
                 100,
                 100
         ));
@@ -559,7 +571,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "l_soft",
                 "↙",
-                new int[]{KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN},
+                new int[]{14, 13}, // DPAD LEFT + DPAD DOWN 동시 전송 지원
                 100,
                 100
         ));
@@ -567,7 +579,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "r_soft",
                 "↘",
-                new int[]{KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN},
+                new int[]{15, 13}, // DPAD RIGHT + DPAD DOWN 동시 전송 지원
                 100,
                 100
         ));
@@ -575,7 +587,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "hold",
                 "C",
-                new int[]{KeyEvent.KEYCODE_C},
+                new int[]{4}, // L1
                 100,
                 100
         ));
@@ -583,7 +595,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "rotate_ccw",
                 "Z",
-                new int[]{KeyEvent.KEYCODE_Z},
+                new int[]{2}, // Button X
                 100,
                 100
         ));
@@ -591,7 +603,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "rotate_cw",
                 "X",
-                new int[]{KeyEvent.KEYCODE_DPAD_UP},
+                new int[]{3}, // Button Y (TETR.IO 인게임 패드 옵션에서 쉽게 커스텀 지정 가능)
                 100,
                 100
         ));
@@ -599,7 +611,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "rotate_180",
                 "A",
-                new int[]{KeyEvent.KEYCODE_A},
+                new int[]{0}, // Button A
                 100,
                 100
         ));
@@ -607,7 +619,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "hard_drop",
                 "□",
-                new int[]{KeyEvent.KEYCODE_SPACE},
+                new int[]{1}, // Button B
                 100,
                 100
         ));
@@ -871,8 +883,8 @@ public class MainActivity extends BridgeActivity {
         if (btn.activePointerCount == 1) {
             btn.isCurrentPressed = true;
 
-            for (int code : btn.androidKeyCodes) {
-                sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
+            for (int index : btn.gamepadButtonIndices) {
+                sendGamepadStateToJs(index, true);
             }
         }
     }
@@ -887,38 +899,27 @@ public class MainActivity extends BridgeActivity {
         if (btn.activePointerCount == 0 && btn.isCurrentPressed) {
             btn.isCurrentPressed = false;
 
-            for (int code : btn.androidKeyCodes) {
-                sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
+            for (int index : btn.gamepadButtonIndices) {
+                sendGamepadStateToJs(index, false);
             }
         }
     }
 
-    private void sendNativeKeyEvent(WebView webView, int keyAction, int androidKeyCode) {
-        if (webView == null) return;
-
-        long uptime = SystemClock.uptimeMillis();
-        long downTime;
-
-        if (keyAction == KeyEvent.ACTION_DOWN) {
-            if (keyByDownTimes.get(androidKeyCode) == null) {
-                keyByDownTimes.put(androidKeyCode, uptime);
+    // WebMessagePort 터널을 통해 JS로 게임패드 상태 데이터를 초고속 직렬화 전송
+    private void sendGamepadStateToJs(int btnIndex, boolean isPressed) {
+        if (nativePort != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                String msg = "{\"btnIndex\":" + btnIndex + ",\"isPressed\":" + isPressed + "}";
+                nativePort.postMessage(new WebMessage(msg));
+            } catch (Exception e) {
+                Log.e(TAG, "게임패드 상태 포트 데이터 전송 실패: " + e.getMessage());
             }
-            downTime = keyByDownTimes.get(androidKeyCode);
-        } else { // ACTION_UP
-            Long savedDownTime = keyByDownTimes.get(androidKeyCode);
-            downTime = (savedDownTime != null) ? savedDownTime : uptime;
-            keyByDownTimes.delete(androidKeyCode);
         }
+    }
 
-        KeyEvent event = new KeyEvent(downTime, uptime, keyAction, androidKeyCode, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
-
-        webView.post(() -> {
-            if (keyAction == KeyEvent.ACTION_DOWN) {
-                webView.onKeyDown(androidKeyCode, event);
-            } else if (keyAction == KeyEvent.ACTION_UP) {
-                webView.onKeyUp(androidKeyCode, event);
-            }
-        });
+    // 유틸리티 제어용 시스템 키 전송 (Esc, R 등 백그라운드 키보드 처리 유지)
+    private void sendNativeKeyEvent(WebView webView, int keyAction, int androidKeyCode) {
+        webView.dispatchKeyEvent(new KeyEvent(keyAction, androidKeyCode));
     }
 
     private int dpToPx(int dp) {
@@ -929,13 +930,84 @@ public class MainActivity extends BridgeActivity {
         return Math.max(min, Math.min(max, value));
     }
 
+    // 웹뷰 커스텀 게임패드 인터페이스 스크립트 인젝션 비즈니스 로직
+    private void injectGamepadScript(WebView webView) {
+        String js = "(function() {" +
+                "if (window.virtualGamepadInjected) return;" +
+                "window.virtualGamepadInjected = true;" +
+                "const mockGamepad = {" +
+                "  id: 'Standard Wireless Controller (Tetroid Virtual)'," +
+                "  index: 0," +
+                "  connected: true," +
+                "  timestamp: performance.now()," +
+                "  mapping: 'standard'," +
+                "  axes: [0, 0, 0, 0]," +
+                "  buttons: Array.from({ length: 16 }, () => ({ pressed: false, touched: false, value: 0 }))" +
+                "};" +
+                "navigator.getGamepads = function() {" +
+                "  mockGamepad.timestamp = performance.now();" +
+                "  return [mockGamepad];" +
+                "};" +
+                "window.addEventListener('message', function(event) {" +
+                "  let data;" +
+                "  try { data = JSON.parse(event.data); } catch(e) { data = event.data; }" +
+                "  if (data && data.type === 'INIT_PAD_PORT') {" +
+                "    const port = event.ports[0];" +
+                "    port.onmessage = function(e) {" +
+                "      try {" +
+                "        const btnData = JSON.parse(e.data);" +
+                "        if (mockGamepad.buttons[btnData.btnIndex]) {" +
+                "          mockGamepad.buttons[btnData.btnIndex].pressed = btnData.isPressed;" +
+                "          mockGamepad.buttons[btnData.btnIndex].value = btnData.isPressed ? 1.0 : 0.0;" +
+                "        }" +
+                "      } catch(err) {}" +
+                "    };" +
+                "  }" +
+                "});" +
+                "})();";
+        webView.evaluateJavascript(js, null);
+    }
+
+    // 고속 비동기 IPC를 위한 네이티브-웹뷰 포트 브릿지 채널 생성
+    private void setupMessageChannel(WebView webView) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                WebMessagePort[] channels = webView.createWebMessageChannel();
+                nativePort = channels[0];
+                WebMessagePort jsPort = channels[1];
+
+                injectGamepadScript(webView);
+
+                webView.postWebMessage(
+                        new WebMessage("{\"type\":\"INIT_PAD_PORT\"}", new WebMessagePort[]{jsPort}),
+                        Uri.parse("https://tetr.io")
+                );
+            } catch (Exception e) {
+                Log.e(TAG, "고속 메시지 채널 브릿지 빌드 실패: " + e.getMessage());
+            }
+        }
+    }
+
     private void optimizeWebViewPerformance(WebView webView) {
         if (webView == null) return;
 
         try {
             webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-            /* webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
+            // Capacitor 고유 브릿지를 해치지 않고 연동되는 고속 인젝션 확장 클라이언트 주입
+            webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
+                @Override
+                public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                    super.onPageStarted(view, url, favicon);
+                    injectGamepadScript(view);
+                }
+
+                @Override
+                public void onPageFinished(WebView view, String url) {
+                    super.onPageFinished(view, url);
+                    setupMessageChannel(view);
+                }
+
                 @Override
                 public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, android.webkit.WebResourceRequest request) {
                     String url = request.getUrl().toString();
@@ -955,7 +1027,7 @@ public class MainActivity extends BridgeActivity {
 
                     return super.shouldInterceptRequest(view, request);
                 }
-            }); */
+            });
 
             webView.loadUrl("https://tetr.io/" + launchRoomCode);
 
@@ -977,7 +1049,7 @@ public class MainActivity extends BridgeActivity {
                 );
             }
         } catch (Exception e) {
-            Log.e(TAG, "웹뷰 가속 엔진 빌드 실패: " + e.getMessage(), e);
+            Log.e(TAG, "웹뷰 가속 엔진 및 스크립트 파이프라인 빌드 실패: " + e.getMessage(), e);
         }
     }
 }
