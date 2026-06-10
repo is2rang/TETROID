@@ -2,7 +2,6 @@ package com.is2rang.tetroid;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.ActivityInfo;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -28,14 +27,15 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import androidx.webkit.WebViewCompat;
+import androidx.webkit.JavaScriptReplyProxy;
 import androidx.webkit.WebMessageCompat;
-import androidx.webkit.WebMessagePortCompat;
+import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
 import com.getcapacitor.BridgeActivity;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 
@@ -63,15 +63,15 @@ public class MainActivity extends BridgeActivity {
     private Button btnEsc;
     private Button btnR;
 
-    // 초고속 통신을 위한 네이티브 포트 선언
-    private WebMessagePortCompat nativePort;
+    // 초고속 양방향 프록시 통신 채널 변수
+    private JavaScriptReplyProxy currentReplyProxy;
 
     private class VirtualButton {
         final String saveKey;
         final String label;
         final RectF bounds = new RectF();
         final Rect hitRect = new Rect();
-        final int[] gamepadIndices; // 변경: 안드로이드 키코드 대신 게임패드 인덱스 사용
+        final int[] gamepadIndices; 
 
         boolean isCurrentPressed = false;
         int activePointerCount = 0;
@@ -290,7 +290,7 @@ public class MainActivity extends BridgeActivity {
                 if (btn.isCurrentPressed) {
                     btn.isCurrentPressed = false;
                     btn.activePointerCount = 0;
-                    sendGamepadState(btn.gamepadIndices, false); // 일괄 물리 해제 상태 주입
+                    sendGamepadState(btn.gamepadIndices, false);
                 }
             }
 
@@ -535,20 +535,18 @@ public class MainActivity extends BridgeActivity {
     private void createVirtualButtons() {
         if (combinedPad == null) return;
 
-        // Standard Gamepad 매핑 인덱스 기준 바인딩 처리
-        combinedPad.addVirtualButton(new VirtualButton("left", "←", new int[]{14}, 100, 100));       // 14: D-Pad Left
-        combinedPad.addVirtualButton(new VirtualButton("soft_drop", "↓", new int[]{13}, 100, 100));  // 13: D-Pad Down
-        combinedPad.addVirtualButton(new VirtualButton("right", "→", new int[]{15}, 100, 100));      // 15: D-Pad Right
+        combinedPad.addVirtualButton(new VirtualButton("left", "←", new int[]{14}, 100, 100));       
+        combinedPad.addVirtualButton(new VirtualButton("soft_drop", "↓", new int[]{13}, 100, 100));  
+        combinedPad.addVirtualButton(new VirtualButton("right", "→", new int[]{15}, 100, 100));      
 
-        // 대각선 복합 제어 입력 (두 인덱스 동시 활성화 보장)
         combinedPad.addVirtualButton(new VirtualButton("l_soft", "↙", new int[]{14, 13}, 100, 100));
         combinedPad.addVirtualButton(new VirtualButton("r_soft", "↘", new int[]{15, 13}, 100, 100));
 
-        combinedPad.addVirtualButton(new VirtualButton("hold", "C", new int[]{4}, 100, 100));         // 4: LB
-        combinedPad.addVirtualButton(new VirtualButton("rotate_ccw", "Z", new int[]{2}, 100, 100));   // 2: X 버튼
-        combinedPad.addVirtualButton(new VirtualButton("rotate_cw", "X", new int[]{1}, 100, 100));    // 1: B 버튼
-        combinedPad.addVirtualButton(new VirtualButton("rotate_180", "A", new int[]{0}, 100, 100));   // 0: A 버튼
-        combinedPad.addVirtualButton(new VirtualButton("hard_drop", "□", new int[]{12}, 100, 100));   // 12: D-Pad Up
+        combinedPad.addVirtualButton(new VirtualButton("hold", "C", new int[]{4}, 100, 100));         
+        combinedPad.addVirtualButton(new VirtualButton("rotate_ccw", "Z", new int[]{2}, 100, 100));   
+        combinedPad.addVirtualButton(new VirtualButton("rotate_cw", "X", new int[]{1}, 100, 100));    
+        combinedPad.addVirtualButton(new VirtualButton("rotate_180", "A", new int[]{0}, 100, 100));   
+        combinedPad.addVirtualButton(new VirtualButton("hard_drop", "□", new int[]{12}, 100, 100));   
     }
 
     private void createUtilityControls(FrameLayout parent) {
@@ -801,8 +799,9 @@ public class MainActivity extends BridgeActivity {
         return getBridge().getWebView();
     }
 
+    // 신규 양방향 비동기 프록시 기반 고속 데이터 송신 로직
     private void sendGamepadState(int[] indices, boolean isPressed) {
-        if (nativePort == null) return;
+        if (currentReplyProxy == null) return;
 
         StringBuilder sb = new StringBuilder();
         sb.append("{\"type\":\"PAD\",\"pressed\":").append(isPressed).append(",\"indices\":[");
@@ -812,7 +811,7 @@ public class MainActivity extends BridgeActivity {
         }
         sb.append("]}");
 
-        nativePort.postMessage(new WebMessageCompat(sb.toString()));
+        currentReplyProxy.postMessage(sb.toString());
     }
 
     private void pressButton(WebView webView, VirtualButton btn) {
@@ -874,44 +873,46 @@ public class MainActivity extends BridgeActivity {
             settings.setLoadsImagesAutomatically(true);
             settings.setMediaPlaybackRequiresUserGesture(false);
 
-            webView.setWebViewClient(new android.webkit.WebViewClient() {
-                @Override
-                public void onPageFinished(WebView view, String url) {
-                    super.onPageFinished(view, url);
+            HashSet<String> allowedOrigins = new HashSet<>(Collections.singletonList("https://tetr.io"));
 
-                    String jsCode = "(function() { " +
-                            "const virtualGamepad = { id: 'Tetroid Gamepad', index: 0, connected: true, timestamp: performance.now(), mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({length: 17}, () => ({ pressed: false, touched: false, value: 0 })) }; " +
-                            "navigator.getGamepads = function() { return [virtualGamepad]; }; " +
-                            "window.addEventListener('message', function(e) { " +
-                            "if (e.data === 'init_tetroid_port' && e.ports && e.ports[0]) { " +
-                            "const port = e.ports[0]; " +
-                            "port.onmessage = function(ev) { " +
-                            "const data = JSON.parse(ev.data); " +
-                            "for(let i=0; i<data.indices.length; i++) { const idx = data.indices[i]; virtualGamepad.buttons[idx].pressed = data.pressed; virtualGamepad.buttons[idx].value = data.pressed ? 1 : 0; } " +
-                            "virtualGamepad.timestamp = performance.now(); " +
-                            "}; " +
-                            "window.dispatchEvent(new GamepadEvent('gamepadconnected', { gamepad: virtualGamepad })); " +
-                            "setInterval(() => { window.dispatchEvent(new GamepadEvent('gamepadconnected', { gamepad: virtualGamepad })); }, 3000); " +
-                            "} " +
-                            "}); " +
-                            "})();";
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
+                WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
 
-                    webView.evaluateJavascript(jsCode, null);
-
-                    if (WebViewFeature.isFeatureSupported(WebViewFeature.CREATE_WEB_MESSAGE_CHANNEL)) {
-                        WebMessagePortCompat[] ports = WebViewCompat.createWebMessageChannel(webView);
-                        nativePort = ports[0];
-                        WebMessagePortCompat webPort = ports[1];
-                    
-                        WebViewCompat.postWebMessage(webView, 
-                                new WebMessageCompat("init_tetroid_port", new WebMessagePortCompat[]{webPort}), 
-                                android.net.Uri.parse("https://tetr.io"));
+                // [구조 안정화] 카파시터 고유 웹 클라이언트를 파괴하지 않는 안정적 포트 리스너 연결
+                WebViewCompat.addWebMessageListener(webView, "tetroidNative", allowedOrigins,
+                    new WebViewCompat.WebMessageListener() {
+                        @Override
+                        public void onPostMessage(WebView view, WebMessageCompat message, android.net.Uri sourceOrigin, boolean isMainFrame, JavaScriptReplyProxy replyProxy) {
+                            if ("READY".equals(message.getData())) {
+                                Log.d(TAG, "⚡ Tetroid 고속 패드 커넥션 채널 개설 완료!");
+                                currentReplyProxy = replyProxy; 
+                            }
+                        }
                     }
-                }
-            });
+                );
+
+                // [레이스 컨디션 해결] 인게임 스크립트 실행 이전에 HTML5 Gamepad API 규격 하이재킹 완료 보장
+                String jsCode = "(function() { " +
+                        "const virtualGamepad = { id: 'Tetroid Gamepad', index: 0, connected: true, timestamp: performance.now(), mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({length: 17}, () => ({ pressed: false, touched: false, value: 0 })) }; " +
+                        "navigator.getGamepads = function() { return [virtualGamepad]; }; " +
+                        "window.tetroidNative.onmessage = function(event) { " +
+                        "   const data = JSON.parse(event.data); " +
+                        "   for(let i=0; i<data.indices.length; i++) { " +
+                        "       const idx = data.indices[i]; " +
+                        "       virtualGamepad.buttons[idx].pressed = data.pressed; " +
+                        "       virtualGamepad.buttons[idx].value = data.pressed ? 1 : 0; " +
+                        "   } " +
+                        "   virtualGamepad.timestamp = performance.now(); " +
+                        "}; " +
+                        "function trigger() { window.dispatchEvent(new GamepadEvent('gamepadconnected', { gamepad: virtualGamepad })); }" +
+                        "trigger(); setInterval(trigger, 3000); " +
+                        "window.tetroidNative.postMessage('READY'); " +
+                        "})();";
+
+                WebViewCompat.addDocumentStartJavaScript(webView, jsCode, allowedOrigins);
+            }
 
             webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
-
             if (getWindow() != null) {
                 getWindow().setFlags(
                         WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
@@ -919,7 +920,7 @@ public class MainActivity extends BridgeActivity {
                 );
             }
         } catch (Exception e) {
-            Log.e(TAG, "웹뷰 가속 및 가상 패드 엔진 초기화 실패: " + e.getMessage(), e);
+            Log.e(TAG, "통신 파이프라인 아키텍처 빌드 실패: " + e.getMessage(), e);
         }
     }
 }
