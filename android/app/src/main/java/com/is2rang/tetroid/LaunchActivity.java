@@ -49,15 +49,12 @@ public class LaunchActivity extends Activity {
                         View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 );
             }
-        } catch (Exception e) {
-            
-        }
+        } catch (Exception e) {}
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
 
-        // 검은 배경
         root.setBackgroundColor(Color.BLACK);
 
         roomInput = new EditText(this);
@@ -78,11 +75,7 @@ public class LaunchActivity extends Activity {
         Button playBtn = new Button(this);
         playBtn.setText("PLAY");
 
-        LinearLayout.LayoutParams buttonParams =
-                new LinearLayout.LayoutParams(
-                        dpToPx(180),
-                        dpToPx(60)
-                );
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(dpToPx(180), dpToPx(60));
 
         buttonParams.topMargin = dpToPx(20);
 
@@ -95,21 +88,14 @@ public class LaunchActivity extends Activity {
 
         playBtn.setOnClickListener(v -> {
 
-            String roomCode =
-                    roomInput.getText()
-                            .toString()
-                            .trim();
+            String roomCode = roomInput.getText() .toString().trim();
+            if (!roomCode.isEmpty()) {
+                roomCode = "#" + roomCode.toUpperCase();
+            }
 
-            Intent intent =
-                    new Intent(
-                            LaunchActivity.this,
-                            MainActivity.class
-                    );
+            Intent intent = new Intent(LaunchActivity.this, MainActivity.class);
 
-            intent.putExtra(
-                    "roomCode",
-                    roomCode
-            );
+            intent.putExtra("roomCode", roomCode);
 
             startActivity(intent);
         });

@@ -909,9 +909,9 @@ public class MainActivity extends BridgeActivity {
             }
         }
 
-        if (combinedPad != null) {
-            combinedPad.invalidate();
-        }
+        // if (combinedPad != null) {
+        //    combinedPad.invalidate();
+        //}
     }
 
     private void releaseButton(WebView webView, VirtualButton btn) {
