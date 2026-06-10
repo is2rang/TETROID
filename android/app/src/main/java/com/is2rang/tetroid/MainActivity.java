@@ -898,7 +898,7 @@ public class MainActivity extends BridgeActivity {
 
                     webView.evaluateJavascript(jsCode, null);
 
-                    if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_CHANNELS)) {
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.CREATE_WEB_MESSAGE_CHANNEL)) {
                         WebMessagePortCompat[] ports = WebViewCompat.createWebMessageChannel(webView);
                         nativePort = ports[0];
                         WebMessagePortCompat webPort = ports[1];
