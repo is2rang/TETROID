@@ -11,6 +11,7 @@ import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock; // 상호작용 시뮬레이션을 위해 추가
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Gravity;
@@ -28,10 +29,6 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import androidx.webkit.WebMessageCompat;
-import androidx.webkit.WebMessagePortCompat;
-import androidx.webkit.WebViewCompat;
-import androidx.webkit.WebViewFeature;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -62,6 +59,9 @@ public class MainActivity extends BridgeActivity {
     private Button btnVisibilityToggle;
     private Button btnEsc;
     private Button btnR;
+
+    // 브라우저 User Gesture 우회를 위한 플래그
+    private boolean hasDispatchedGesture = false;
 
     // 네이티브와 JS 간 초고속 데이터 전송을 위한 메시지 포트
     private WebMessagePort nativePort;
@@ -523,7 +523,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.setLayoutParams(new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
-        ));
+                ));
         combinedPad.setBackgroundColor(Color.TRANSPARENT);
 
         createVirtualButtons();
@@ -542,12 +542,12 @@ public class MainActivity extends BridgeActivity {
     private void createVirtualButtons() {
         if (combinedPad == null) return;
 
-        // W3C Standard Gamepad Mapping 인덱스 기준 매핑
-        // 0:A, 1:B, 2:X, 3:Y, 4:L1, 5:R1, 6:L2, 7:R2, 12:Up, 13:Down, 14:Left, 15:Right
+        // W3C Standard Gamepad Mapping 표준 규격 인덱스 사용
+        // 14: Left, 13: Down, 15: Right, 4: L1, 2: X, 3: Y, 0: A, 1: B
         combinedPad.addVirtualButton(new VirtualButton(
                 "left",
                 "←",
-                new int[]{14}, // DPAD LEFT
+                new int[]{14},
                 100,
                 100
         ));
@@ -555,7 +555,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "soft_drop",
                 "↓",
-                new int[]{13}, // DPAD DOWN
+                new int[]{13},
                 100,
                 100
         ));
@@ -563,7 +563,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "right",
                 "→",
-                new int[]{15}, // DPAD RIGHT
+                new int[]{15},
                 100,
                 100
         ));
@@ -571,7 +571,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "l_soft",
                 "↙",
-                new int[]{14, 13}, // DPAD LEFT + DPAD DOWN 동시 전송 지원
+                new int[]{14, 13},
                 100,
                 100
         ));
@@ -579,7 +579,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "r_soft",
                 "↘",
-                new int[]{15, 13}, // DPAD RIGHT + DPAD DOWN 동시 전송 지원
+                new int[]{15, 13},
                 100,
                 100
         ));
@@ -587,7 +587,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "hold",
                 "C",
-                new int[]{4}, // L1
+                new int[]{4}, 
                 100,
                 100
         ));
@@ -595,7 +595,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "rotate_ccw",
                 "Z",
-                new int[]{2}, // Button X
+                new int[]{2}, 
                 100,
                 100
         ));
@@ -603,7 +603,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "rotate_cw",
                 "X",
-                new int[]{3}, // Button Y (TETR.IO 인게임 패드 옵션에서 쉽게 커스텀 지정 가능)
+                new int[]{3}, 
                 100,
                 100
         ));
@@ -611,7 +611,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "rotate_180",
                 "A",
-                new int[]{0}, // Button A
+                new int[]{0}, 
                 100,
                 100
         ));
@@ -619,7 +619,7 @@ public class MainActivity extends BridgeActivity {
         combinedPad.addVirtualButton(new VirtualButton(
                 "hard_drop",
                 "□",
-                new int[]{1}, // Button B
+                new int[]{1}, 
                 100,
                 100
         ));
@@ -875,8 +875,27 @@ public class MainActivity extends BridgeActivity {
         return getBridge().getWebView();
     }
 
+    // Chromium의 Gamepad API 활성화를 유도하기 위한 의사 상호작용 주입 메서드
+    private void simulateUserGesture(WebView webView) {
+        if (hasDispatchedGesture || webView == null) return;
+        hasDispatchedGesture = true;
+
+        long downTime = SystemClock.uptimeMillis();
+        MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, 1f, 1f, 0);
+        MotionEvent upEvent = MotionEvent.obtain(downTime, downTime + 30, MotionEvent.ACTION_UP, 1f, 1f, 0);
+
+        webView.dispatchTouchEvent(downEvent);
+        webView.dispatchTouchEvent(upEvent);
+
+        downEvent.recycle();
+        upEvent.recycle();
+    }
+
     private void pressButton(WebView webView, VirtualButton btn) {
         if (btn == null) return;
+
+        // 첫 가상 입력 발생 시 백그라운드 웹뷰 영역에 일회성 제스처 신호를 투고해 차단을 해제함
+        simulateUserGesture(webView);
 
         btn.activePointerCount++;
 
@@ -930,7 +949,7 @@ public class MainActivity extends BridgeActivity {
         return Math.max(min, Math.min(max, value));
     }
 
-    // 웹뷰 커스텀 게임패드 인터페이스 스크립트 인젝션 비즈니스 로직
+    // 웹뷰 커스텀 게임패드 인터페이스 및 '연결 이벤트 가속 엔진' 스크립트 인젝션 로직
     private void injectGamepadScript(WebView webView) {
         String js = "(function() {" +
                 "if (window.virtualGamepadInjected) return;" +
@@ -946,8 +965,18 @@ public class MainActivity extends BridgeActivity {
                 "};" +
                 "navigator.getGamepads = function() {" +
                 "  mockGamepad.timestamp = performance.now();" +
-                "  return [mockGamepad];" +
+                "  return [mockGamepad, null, null, null];" +
                 "};" +
+                "function dispatchConnect() {" +
+                "  try {" +
+                "    const event = new GamepadEvent('gamepadconnected', { gamepad: mockGamepad });" +
+                "    window.dispatchEvent(event);" +
+                "  } catch (e) {" +
+                "    const event = new Event('gamepadconnected');" +
+                "    event.gamepad = mockGamepad;" +
+                "    window.dispatchEvent(event);" +
+                "  }" +
+                "}" +
                 "window.addEventListener('message', function(event) {" +
                 "  let data;" +
                 "  try { data = JSON.parse(event.data); } catch(e) { data = event.data; }" +
@@ -959,9 +988,12 @@ public class MainActivity extends BridgeActivity {
                 "        if (mockGamepad.buttons[btnData.btnIndex]) {" +
                 "          mockGamepad.buttons[btnData.btnIndex].pressed = btnData.isPressed;" +
                 "          mockGamepad.buttons[btnData.btnIndex].value = btnData.isPressed ? 1.0 : 0.0;" +
+                "          if (btnData.isPressed) { dispatchConnect(); }" + // 버튼 터치 순간 무조건 연결 이벤트 재검증 동기화
                 "        }" +
                 "      } catch(err) {}" +
                 "    };" +
+                "    dispatchConnect();" +
+                "    setInterval(dispatchConnect, 1500);" + // 로딩 직후 유실 대비 1.5초 간격 상시 연결 동기화 폴링 실행
                 "  }" +
                 "});" +
                 "})();";
@@ -994,11 +1026,11 @@ public class MainActivity extends BridgeActivity {
         try {
             webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-            // Capacitor 고유 브릿지를 해치지 않고 연동되는 고속 인젝션 확장 클라이언트 주입
             webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
                 @Override
                 public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                     super.onPageStarted(view, url, favicon);
+                    hasDispatchedGesture = false; // 새로운 페이지 세션 시작 시 제스처 우회 플래그 리셋
                     injectGamepadScript(view);
                 }
 
