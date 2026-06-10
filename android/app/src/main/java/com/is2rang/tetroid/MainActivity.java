@@ -2,18 +2,14 @@ package com.is2rang.tetroid;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.ActivityInfo;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.SystemClock;
 import android.util.Log;
-import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -22,8 +18,6 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
-import android.webkit.WebMessage;
-import android.webkit.WebMessagePort;
 import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -33,7 +27,7 @@ import android.widget.TextView;
 import com.getcapacitor.BridgeActivity;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends BridgeActivity {
@@ -41,7 +35,9 @@ public class MainActivity extends BridgeActivity {
     private static final String TAG = "TetrioMobile";
     private static final int GRID_SIZE_DP = 10;
     private static final String PREFS_NAME = "TetroidCustomPadPrefs";
-    
+
+    private static final int MAX_CACHED_KEY_CODE = 1023;
+
     private String launchRoomCode = "";
 
     private boolean isPadVisible = true;
@@ -50,9 +46,12 @@ public class MainActivity extends BridgeActivity {
     private VirtualButton selectedButton = null;
 
     private float displayDensity;
-    private float gridPx; // 그리드 픽셀 값 캐싱
 
     private GamePadOverlay combinedPad;
+
+    private final int[] keyPressRefCounts = new int[MAX_CACHED_KEY_CODE + 1];
+    private final KeyEvent[] downEvents = new KeyEvent[MAX_CACHED_KEY_CODE + 1];
+    private final KeyEvent[] upEvents = new KeyEvent[MAX_CACHED_KEY_CODE + 1];
 
     private LinearLayout sizeBar;
     private TextView tvScale;
@@ -61,19 +60,12 @@ public class MainActivity extends BridgeActivity {
     private Button btnEsc;
     private Button btnR;
 
-    private boolean hasDispatchedGesture = false;
-    private WebMessagePort nativePort;
-
-    // [최적화] 고속 입력 처리를 위한 문자열 메시지 캐시 배열 (GC 방지)
-    // 인덱스 0~15의 버튼 x [0: false, 1: true] 상태 저장
-    private final String[][] gamepadMessageCache = new String[16][2];
-
     private class VirtualButton {
         final String saveKey;
         final String label;
         final RectF bounds = new RectF();
         final Rect hitRect = new Rect();
-        final int[] gamepadButtonIndices;
+        final int[] androidKeyCodes;
 
         boolean isCurrentPressed = false;
         int activePointerCount = 0;
@@ -83,20 +75,22 @@ public class MainActivity extends BridgeActivity {
         final int baseHeightDp;
         float scaleFactor = 1.0f;
 
-        VirtualButton(String saveKey, String label, int[] gamepadButtonIndices, int baseWidthDp, int baseHeightDp) {
+        VirtualButton(String saveKey, String label, int[] keyCodes, int baseWidthDp, int baseHeightDp) {
             this.saveKey = saveKey;
             this.label = label;
-            this.gamepadButtonIndices = gamepadButtonIndices;
+            this.androidKeyCodes = keyCodes;
             this.baseWidthDp = baseWidthDp;
             this.baseHeightDp = baseHeightDp;
         }
 
         float getWidthPx() {
-            return Math.round((dpToPx(baseWidthDp) * scaleFactor) / gridPx) * gridPx;
+            float grid = dpToPx(GRID_SIZE_DP);
+            return Math.round((dpToPx(baseWidthDp) * scaleFactor) / grid) * grid;
         }
-        
+
         float getHeightPx() {
-            return Math.round((dpToPx(baseHeightDp) * scaleFactor) / gridPx) * gridPx;
+            float grid = dpToPx(GRID_SIZE_DP);
+            return Math.round((dpToPx(baseHeightDp) * scaleFactor) / grid) * grid;
         }
 
         void setBounds(float left, float top) {
@@ -122,7 +116,7 @@ public class MainActivity extends BridgeActivity {
         private final Paint textPaint = new Paint();
 
         private final List<VirtualButton> buttons = new ArrayList<>();
-        private final SparseArray<VirtualButton> pointerButtonMap = new SparseArray<>();
+        private VirtualButton[] pointerButtonMap = new VirtualButton[16];
 
         private boolean layoutInitialized = false;
 
@@ -164,11 +158,13 @@ public class MainActivity extends BridgeActivity {
             if (!visible) {
                 releaseAllPressedStates();
             }
-            invalidate();
+            postInvalidateOnAnimation();
         }
 
         void initializeButtonLayouts() {
-            if (layoutInitialized) return;
+            if (layoutInitialized) {
+                return;
+            }
 
             if (getWidth() == 0 || getHeight() == 0) {
                 post(this::initializeButtonLayouts);
@@ -176,16 +172,18 @@ public class MainActivity extends BridgeActivity {
             }
 
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+
             for (VirtualButton btn : buttons) {
                 applyStoredOrDefaultLayout(btn, prefs);
             }
 
             layoutInitialized = true;
-            invalidate();
+            postInvalidateOnAnimation();
         }
 
         private void applyStoredOrDefaultLayout(VirtualButton btn, SharedPreferences prefs) {
             String key = btn.saveKey;
+
             if (prefs.contains(key + "_left") && prefs.contains(key + "_top")) {
                 float left = prefs.getFloat(key + "_left", 0f);
                 float top = prefs.getFloat(key + "_top", 0f);
@@ -195,6 +193,7 @@ public class MainActivity extends BridgeActivity {
                 btn.setBounds(left, top);
                 return;
             }
+
             applyDefaultLayout(btn);
         }
 
@@ -219,67 +218,121 @@ public class MainActivity extends BridgeActivity {
             float rightGroupLeftX = rightGroupMidX - gap - sizeW;
 
             switch (btn.saveKey) {
-                case "left": btn.setBounds(leftX, bottomY); break;
-                case "soft_drop": btn.setBounds(midX, bottomY); break;
-                case "right": btn.setBounds(rightX, bottomY); break;
-                case "l_soft": btn.setBounds(leftX, upperY); break;
-                case "r_soft": btn.setBounds(rightX, upperY); break;
-                case "hard_drop": btn.setBounds(rightGroupRightX, bottomY); break;
-                case "rotate_cw": btn.setBounds(rightGroupMidX, bottomY); break;
-                case "rotate_ccw": btn.setBounds(rightGroupLeftX, bottomY); break;
-                case "rotate_180": btn.setBounds(rightGroupMidX, upperY); break;
-                case "hold": btn.setBounds(rightGroupLeftX, upperY); break;
-                default: btn.setBounds(leftX, bottomY); break;
+                case "left":
+                    btn.setBounds(leftX, bottomY);
+                    break;
+                case "soft_drop":
+                    btn.setBounds(midX, bottomY);
+                    break;
+                case "right":
+                    btn.setBounds(rightX, bottomY);
+                    break;
+                case "l_soft":
+                    btn.setBounds(leftX, upperY);
+                    break;
+                case "r_soft":
+                    btn.setBounds(rightX, upperY);
+                    break;
+                case "hard_drop":
+                    btn.setBounds(rightGroupRightX, bottomY);
+                    break;
+                case "rotate_cw":
+                    btn.setBounds(rightGroupMidX, bottomY);
+                    break;
+                case "rotate_ccw":
+                    btn.setBounds(rightGroupLeftX, bottomY);
+                    break;
+                case "rotate_180":
+                    btn.setBounds(rightGroupMidX, upperY);
+                    break;
+                case "hold":
+                    btn.setBounds(rightGroupLeftX, upperY);
+                    break;
+                default:
+                    btn.setBounds(leftX, bottomY);
+                    break;
             }
         }
 
         void saveLayoutsToPrefs() {
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             SharedPreferences.Editor editor = prefs.edit();
+
             for (VirtualButton btn : buttons) {
                 editor.putFloat(btn.saveKey + "_left", btn.bounds.left);
                 editor.putFloat(btn.saveKey + "_top", btn.bounds.top);
                 editor.putFloat(btn.saveKey + "_scale", btn.scaleFactor);
             }
+
             editor.apply();
         }
 
         void clearAllPressedStates() {
             WebView webView = getCurrentWebView();
+
             if (webView == null) {
-                pointerButtonMap.clear();
+                for (VirtualButton btn : buttons) {
+                    btn.activePointerCount = 0;
+                    btn.isCurrentPressed = false;
+                }
+
+                Arrays.fill(keyPressRefCounts, 0);
+                Arrays.fill(pointerButtonMap, null);
+                postInvalidateOnAnimation();
                 return;
             }
 
-            HashSet<VirtualButton> uniqueButtons = new HashSet<>();
-            for (int i = 0; i < pointerButtonMap.size(); i++) {
-                VirtualButton btn = pointerButtonMap.valueAt(i);
-                if (btn != null) uniqueButtons.add(btn);
-            }
-
-            for (VirtualButton btn : uniqueButtons) {
-                if (btn.isCurrentPressed) {
-                    btn.isCurrentPressed = false;
-                    btn.activePointerCount = 0;
-                    for (int index : btn.gamepadButtonIndices) {
-                        sendGamepadStateToJs(index, false);
-                    }
+            for (int i = 0; i < pointerButtonMap.length; i++) {
+                VirtualButton btn = pointerButtonMap[i];
+                if (btn != null) {
+                    releaseButton(webView, btn);
+                    pointerButtonMap[i] = null;
                 }
             }
-            pointerButtonMap.clear();
-            invalidate();
+
+            postInvalidateOnAnimation();
         }
 
         private void releaseAllPressedStates() {
             clearAllPressedStates();
         }
 
+        private void ensurePointerCapacity(int pointerId) {
+            if (pointerId < pointerButtonMap.length) {
+                return;
+            }
+
+            int newSize = pointerButtonMap.length;
+            while (newSize <= pointerId) {
+                newSize *= 2;
+            }
+
+            pointerButtonMap = Arrays.copyOf(pointerButtonMap, newSize);
+        }
+
+        private void setPointerButton(int pointerId, VirtualButton btn) {
+            ensurePointerCapacity(pointerId);
+            pointerButtonMap[pointerId] = btn;
+        }
+
+        private VirtualButton getPointerButton(int pointerId) {
+            if (pointerId < 0 || pointerId >= pointerButtonMap.length) {
+                return null;
+            }
+            return pointerButtonMap[pointerId];
+        }
+
+        private void clearPointerButton(int pointerId) {
+            if (pointerId < 0 || pointerId >= pointerButtonMap.length) {
+                return;
+            }
+            pointerButtonMap[pointerId] = null;
+        }
+
         private VirtualButton findButtonAt(float x, float y) {
-            int ix = (int) x;
-            int iy = (int) y;
             for (int i = 0; i < buttons.size(); i++) {
                 VirtualButton btn = buttons.get(i);
-                if (btn.hitRect.contains(ix, iy)) {
+                if (btn.hitRect.contains((int) x, (int) y)) {
                     return btn;
                 }
             }
@@ -290,22 +343,31 @@ public class MainActivity extends BridgeActivity {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN: {
                     VirtualButton btn = findButtonAt(event.getX(), event.getY());
-                    if (btn == null) return true;
+                    if (btn == null) {
+                        return true;
+                    }
 
                     selectButton(btn);
+
                     dragStartX = event.getX();
                     dragStartY = event.getY();
                     originLeft = btn.bounds.left;
                     originTop = btn.bounds.top;
                     return true;
                 }
+
                 case MotionEvent.ACTION_MOVE: {
-                    if (selectedButton == null) return true;
+                    if (selectedButton == null) {
+                        return true;
+                    }
 
                     float dx = event.getX() - dragStartX;
                     float dy = event.getY() - dragStartY;
+
                     float newLeft = originLeft + dx;
                     float newTop = originTop + dy;
+
+                    float gridPx = dpToPx(GRID_SIZE_DP);
 
                     newLeft = Math.round(newLeft / gridPx) * gridPx;
                     newTop = Math.round(newTop / gridPx) * gridPx;
@@ -317,17 +379,23 @@ public class MainActivity extends BridgeActivity {
                     newTop = clamp(newTop, 0f, maxTop);
 
                     selectedButton.setBounds(newLeft, newTop);
-                    invalidate();
+                    postInvalidateOnAnimation();
                     return true;
                 }
-                default:
+
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
                     return true;
             }
+
+            return true;
         }
 
         private boolean handleGameTouch(MotionEvent event) {
             WebView webView = getCurrentWebView();
-            if (webView == null) return false;
+            if (webView == null) {
+                return false;
+            }
 
             int action = event.getActionMasked();
             int actionIndex = event.getActionIndex();
@@ -338,52 +406,57 @@ public class MainActivity extends BridgeActivity {
                     int pointerId = event.getPointerId(actionIndex);
                     VirtualButton btn = findButtonAt(event.getX(actionIndex), event.getY(actionIndex));
 
-                    pointerButtonMap.put(pointerId, btn);
+                    setPointerButton(pointerId, btn);
                     pressButton(webView, btn);
                     return true;
                 }
+
                 case MotionEvent.ACTION_MOVE: {
                     int pointerCount = event.getPointerCount();
+
                     for (int i = 0; i < pointerCount; i++) {
                         int pointerId = event.getPointerId(i);
-                        VirtualButton oldBtn = pointerButtonMap.get(pointerId);
+                        VirtualButton oldBtn = getPointerButton(pointerId);
                         VirtualButton newBtn = findButtonAt(event.getX(i), event.getY(i));
 
                         if (oldBtn != newBtn) {
                             releaseButton(webView, oldBtn);
                             pressButton(webView, newBtn);
-                            pointerButtonMap.put(pointerId, newBtn);
+                            setPointerButton(pointerId, newBtn);
                         }
                     }
+
                     return true;
                 }
+
                 case MotionEvent.ACTION_POINTER_UP:
                 case MotionEvent.ACTION_UP: {
                     int pointerId = event.getPointerId(actionIndex);
-                    VirtualButton btn = pointerButtonMap.get(pointerId);
+                    VirtualButton btn = getPointerButton(pointerId);
 
                     releaseButton(webView, btn);
-                    pointerButtonMap.remove(pointerId);
+                    clearPointerButton(pointerId);
                     return true;
                 }
+
                 case MotionEvent.ACTION_CANCEL: {
                     clearAllPressedStates();
                     return true;
                 }
             }
+
             return true;
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            if (!isPadVisible) return;
 
-            // [최적화] 폰트 마진 연산을 루프 밖에서 1회만 수행하도록 변경
-            float textBaselineOffset = -((textPaint.descent() + textPaint.ascent()) / 2f);
+            if (!isPadVisible) {
+                return;
+            }
 
-            for (int i = 0; i < buttons.size(); i++) {
-                VirtualButton btn = buttons.get(i);
+            for (VirtualButton btn : buttons) {
                 canvas.drawRect(btn.bounds, buttonPaint);
 
                 if (isEditMode && btn.selected) {
@@ -391,31 +464,33 @@ public class MainActivity extends BridgeActivity {
                 }
 
                 float cx = btn.bounds.centerX();
-                float cy = btn.bounds.centerY() + textBaselineOffset;
+                float cy = btn.bounds.centerY() - ((textPaint.descent() + textPaint.ascent()) / 2f);
                 canvas.drawText(btn.label, cx, cy, textPaint);
             }
         }
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            if (!isPadVisible) return false;
-            return isEditMode ? handleEditTouch(event) : handleGameTouch(event);
+            if (!isPadVisible) {
+                return false;
+            }
+
+            if (isEditMode) {
+                return handleEditTouch(event);
+            }
+
+            return handleGameTouch(event);
         }
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
-        launchRoomCode = getIntent().getStringExtra("roomCode");
-        displayDensity = getResources().getDisplayMetrics().density;
-        gridPx = Math.round(GRID_SIZE_DP * displayDensity); // 변수 미리 빌드
 
-        // [최적화] 초고속 전송용 메시지 풀(Pool) 캐시 사전 할당 생성
-        for (int i = 0; i < 16; i++) {
-            gamepadMessageCache[i][0] = "{\"btnIndex\":" + i + ",\"isPressed\":false}";
-            gamepadMessageCache[i][1] = "{\"btnIndex\":" + i + ",\"isPressed\":true}";
-        }
+        String roomCode = getIntent().getStringExtra("roomCode");
+        launchRoomCode = roomCode != null ? roomCode : "";
+
+        initKeyEventCache();
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
@@ -431,6 +506,8 @@ public class MainActivity extends BridgeActivity {
             this.bridge.getWebView().setFitsSystemWindows(false);
         }
 
+        displayDensity = getResources().getDisplayMetrics().density;
+
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 WindowInsetsController controller = getWindow().getInsetsController();
@@ -441,22 +518,50 @@ public class MainActivity extends BridgeActivity {
             } else {
                 getWindow().getDecorView().setSystemUiVisibility(
                         View.SYSTEM_UI_FLAG_FULLSCREEN |
-                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 );
             }
         } catch (Exception e) {
             Log.e(TAG, "해상도 몰입 모드 초기화 실패: " + e.getMessage(), e);
         }
 
-        // 람다식 전환 적용
-        getWindow().getDecorView().post(() -> {
-            try {
-                setupAdvancedModularSystem();
-            } catch (Exception e) {
-                Log.e(TAG, "인프라 시스템 주입 실패: " + e.getMessage(), e);
+        getWindow().getDecorView().post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    setupAdvancedModularSystem();
+                } catch (Exception e) {
+                    Log.e(TAG, "인프라 시스템 주입 실패: " + e.getMessage(), e);
+                }
             }
         });
+    }
+
+    private void initKeyEventCache() {
+        cacheKeyEvent(KeyEvent.KEYCODE_DPAD_LEFT);
+        cacheKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN);
+        cacheKeyEvent(KeyEvent.KEYCODE_DPAD_RIGHT);
+        cacheKeyEvent(KeyEvent.KEYCODE_DPAD_UP);
+        cacheKeyEvent(KeyEvent.KEYCODE_C);
+        cacheKeyEvent(KeyEvent.KEYCODE_Z);
+        cacheKeyEvent(KeyEvent.KEYCODE_A);
+        cacheKeyEvent(KeyEvent.KEYCODE_SPACE);
+        cacheKeyEvent(KeyEvent.KEYCODE_ESCAPE);
+        cacheKeyEvent(KeyEvent.KEYCODE_R);
+    }
+
+    private void cacheKeyEvent(int keyCode) {
+        if (!isValidKeyCode(keyCode)) {
+            return;
+        }
+
+        downEvents[keyCode] = new KeyEvent(KeyEvent.ACTION_DOWN, keyCode);
+        upEvents[keyCode] = new KeyEvent(KeyEvent.ACTION_UP, keyCode);
+    }
+
+    private boolean isValidKeyCode(int keyCode) {
+        return keyCode >= 0 && keyCode <= MAX_CACHED_KEY_CODE;
     }
 
     private void setupAdvancedModularSystem() {
@@ -478,22 +583,97 @@ public class MainActivity extends BridgeActivity {
         createUtilityControls(combinedPad);
 
         rootView.addView(combinedPad);
-        combinedPad.post(() -> combinedPad.initializeButtonLayouts());
+
+        combinedPad.post(new Runnable() {
+            @Override
+            public void run() {
+                combinedPad.initializeButtonLayouts();
+            }
+        });
     }
 
     private void createVirtualButtons() {
         if (combinedPad == null) return;
 
-        combinedPad.addVirtualButton(new VirtualButton("left", "←", new int[]{14}, 100, 100));
-        combinedPad.addVirtualButton(new VirtualButton("soft_drop", "↓", new int[]{13}, 100, 100));
-        combinedPad.addVirtualButton(new VirtualButton("right", "→", new int[]{15}, 100, 100));
-        combinedPad.addVirtualButton(new VirtualButton("l_soft", "↙", new int[]{14, 13}, 100, 100));
-        combinedPad.addVirtualButton(new VirtualButton("r_soft", "↘", new int[]{15, 13}, 100, 100));
-        combinedPad.addVirtualButton(new VirtualButton("hold", "C", new int[]{4}, 100, 100));
-        combinedPad.addVirtualButton(new VirtualButton("rotate_ccw", "Z", new int[]{2}, 100, 100));
-        combinedPad.addVirtualButton(new VirtualButton("rotate_cw", "X", new int[]{3}, 100, 100));
-        combinedPad.addVirtualButton(new VirtualButton("rotate_180", "A", new int[]{0}, 100, 100));
-        combinedPad.addVirtualButton(new VirtualButton("hard_drop", "□", new int[]{1}, 100, 100));
+        combinedPad.addVirtualButton(new VirtualButton(
+                "left",
+                "←",
+                new int[]{KeyEvent.KEYCODE_DPAD_LEFT},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "soft_drop",
+                "↓",
+                new int[]{KeyEvent.KEYCODE_DPAD_DOWN},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "right",
+                "→",
+                new int[]{KeyEvent.KEYCODE_DPAD_RIGHT},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "l_soft",
+                "↙",
+                new int[]{KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "r_soft",
+                "↘",
+                new int[]{KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "hold",
+                "C",
+                new int[]{KeyEvent.KEYCODE_C},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "rotate_ccw",
+                "Z",
+                new int[]{KeyEvent.KEYCODE_Z},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "rotate_cw",
+                "X",
+                new int[]{KeyEvent.KEYCODE_DPAD_UP},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "rotate_180",
+                "A",
+                new int[]{KeyEvent.KEYCODE_A},
+                100,
+                100
+        ));
+
+        combinedPad.addVirtualButton(new VirtualButton(
+                "hard_drop",
+                "□",
+                new int[]{KeyEvent.KEYCODE_SPACE},
+                100,
+                100
+        ));
     }
 
     private void createUtilityControls(FrameLayout parent) {
@@ -527,22 +707,25 @@ public class MainActivity extends BridgeActivity {
         btnR.setTextColor(Color.WHITE);
         btnR.setTextSize(14);
 
-        // [최적화] 인터페이스 익명 내부 객체를 람다 표현식으로 최적화 변경
-        View.OnTouchListener utilityTouchListener = (v, event) -> {
-            WebView webView = getCurrentWebView();
-            if (webView == null) return false;
+        View.OnTouchListener utilityTouchListener = new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                WebView webView = getCurrentWebView();
+                if (webView == null) return false;
 
-            int keyCode = v == btnEsc ? KeyEvent.KEYCODE_ESCAPE : KeyEvent.KEYCODE_R;
-            int action = event.getActionMasked();
+                int keyCode = v == btnEsc ? KeyEvent.KEYCODE_ESCAPE : KeyEvent.KEYCODE_R;
 
-            if (action == MotionEvent.ACTION_DOWN) {
-                sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, keyCode);
-                return true;
-            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, keyCode);
-                return true;
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, keyCode);
+                    return true;
+                } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, keyCode);
+                    return true;
+                }
+
+                return false;
             }
-            return false;
         };
 
         btnEsc.setOnTouchListener(utilityTouchListener);
@@ -613,18 +796,20 @@ public class MainActivity extends BridgeActivity {
         parent.addView(btnEditToggle);
         parent.addView(sizeBar);
     }
-    
+
     private void handleVisibilityToggleTouch() {
         isPadVisible = !isPadVisible;
 
         if (!isPadVisible) {
             btnVisibilityToggle.setText("○");
+
             if (isEditMode) {
                 isEditMode = false;
                 btnEditToggle.setText("Edit");
                 sizeBar.setVisibility(View.GONE);
                 clearSelectedButton();
             }
+
             clearHoverOperationalStates();
 
             btnEditToggle.setVisibility(View.GONE);
@@ -635,11 +820,6 @@ public class MainActivity extends BridgeActivity {
             btnEditToggle.setVisibility(View.VISIBLE);
             btnEsc.setVisibility(View.VISIBLE);
             btnR.setVisibility(View.VISIBLE);
-
-            if (combinedPad != null) {
-                combinedPad.setPadVisible(true);
-                combinedPad.invalidate();
-            }
         }
 
         if (combinedPad != null) {
@@ -655,24 +835,35 @@ public class MainActivity extends BridgeActivity {
             btnEditToggle.setText("Edit");
             sizeBar.setVisibility(View.GONE);
 
-            clearSelectedButton();
+            if (selectedButton != null) {
+                selectedButton.selected = false;
+                selectedButton = null;
+            }
+
             executeSaveCurrentLayouts();
+            if (combinedPad != null) {
+                combinedPad.postInvalidateOnAnimation();
+            }
         } else {
             isEditMode = true;
             btnEditToggle.setText("Save");
             clearHoverOperationalStates();
-            clearSelectedButton();
+
+            if (selectedButton != null) {
+                selectedButton.selected = false;
+                selectedButton = null;
+            }
+
             sizeBar.setVisibility(View.GONE);
-        }
-        if (combinedPad != null) {
-            combinedPad.invalidate();
+            if (combinedPad != null) {
+                combinedPad.postInvalidateOnAnimation();
+            }
         }
     }
 
     private void executeSaveCurrentLayouts() {
-        if (combinedPad != null) {
-            combinedPad.saveLayoutsToPrefs();
-        }
+        if (combinedPad == null) return;
+        combinedPad.saveLayoutsToPrefs();
     }
 
     private void clearHoverOperationalStates() {
@@ -692,7 +883,7 @@ public class MainActivity extends BridgeActivity {
         refreshScaleText();
 
         if (combinedPad != null) {
-            combinedPad.invalidate();
+            combinedPad.postInvalidateOnAnimation();
         }
     }
 
@@ -711,45 +902,36 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void resizeSelectedButton(float delta) {
-        if (selectedButton == null || combinedPad == null) return;
+        if (selectedButton == null || combinedPad == null) {
+            return;
+        }
 
         selectedButton.scaleFactor += delta;
         selectedButton.scaleFactor = clamp(selectedButton.scaleFactor, 0.5f, 2.0f);
 
-        selectedButton.setBounds(selectedButton.bounds.left, selectedButton.bounds.top);
+        float left = selectedButton.bounds.left;
+        float top = selectedButton.bounds.top;
+
+        selectedButton.setBounds(left, top);
         refreshScaleText();
-        combinedPad.invalidate();
+        combinedPad.postInvalidateOnAnimation();
     }
 
     private WebView getCurrentWebView() {
-        return (getBridge() == null) ? null : getBridge().getWebView();
-    }
-
-    private void simulateUserGesture(WebView webView) {
-        if (hasDispatchedGesture || webView == null) return;
-        hasDispatchedGesture = true;
-
-        long downTime = SystemClock.uptimeMillis();
-        MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, 1f, 1f, 0);
-        MotionEvent upEvent = MotionEvent.obtain(downTime, downTime + 30, MotionEvent.ACTION_UP, 1f, 1f, 0);
-
-        webView.dispatchTouchEvent(downEvent);
-        webView.dispatchTouchEvent(upEvent);
-
-        downEvent.recycle();
-        upEvent.recycle();
+        if (getBridge() == null) return null;
+        return getBridge().getWebView();
     }
 
     private void pressButton(WebView webView, VirtualButton btn) {
         if (btn == null) return;
 
-        simulateUserGesture(webView);
         btn.activePointerCount++;
 
         if (btn.activePointerCount == 1) {
             btn.isCurrentPressed = true;
-            for (int index : btn.gamepadButtonIndices) {
-                sendGamepadStateToJs(index, true);
+
+            for (int code : btn.androidKeyCodes) {
+                incrementKeyRefAndMaybeDispatchDown(webView, code);
             }
         }
     }
@@ -763,27 +945,65 @@ public class MainActivity extends BridgeActivity {
 
         if (btn.activePointerCount == 0 && btn.isCurrentPressed) {
             btn.isCurrentPressed = false;
-            for (int index : btn.gamepadButtonIndices) {
-                sendGamepadStateToJs(index, false);
+
+            for (int code : btn.androidKeyCodes) {
+                decrementKeyRefAndMaybeDispatchUp(webView, code);
             }
         }
     }
 
-    // [최적화 핵심] 미리 풀링된 캐시 문자열을 꺼내 보내 동적 생성 비용을 0으로 강하함
-    private void sendGamepadStateToJs(int btnIndex, boolean isPressed) {
-        if (nativePort != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (btnIndex >= 0 && btnIndex < 16) {
-                try {
-                    String msg = gamepadMessageCache[btnIndex][isPressed ? 1 : 0];
-                    nativePort.postMessage(new WebMessage(msg));
-                } catch (Exception e) {
-                    Log.e(TAG, "게임패드 상태 데이터 전송 실패: " + e.getMessage());
-                }
-            }
+    private void incrementKeyRefAndMaybeDispatchDown(WebView webView, int androidKeyCode) {
+        if (webView == null || !isValidKeyCode(androidKeyCode)) {
+            return;
+        }
+
+        int count = keyPressRefCounts[androidKeyCode];
+        keyPressRefCounts[androidKeyCode] = count + 1;
+
+        if (count == 0) {
+            sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, androidKeyCode);
+        }
+    }
+
+    private void decrementKeyRefAndMaybeDispatchUp(WebView webView, int androidKeyCode) {
+        if (webView == null || !isValidKeyCode(androidKeyCode)) {
+            return;
+        }
+
+        int count = keyPressRefCounts[androidKeyCode];
+        if (count <= 0) {
+            return;
+        }
+
+        count--;
+        keyPressRefCounts[androidKeyCode] = count;
+
+        if (count == 0) {
+            sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, androidKeyCode);
         }
     }
 
     private void sendNativeKeyEvent(WebView webView, int keyAction, int androidKeyCode) {
+        if (webView == null) return;
+
+        if (isValidKeyCode(androidKeyCode)) {
+            KeyEvent cached = (keyAction == KeyEvent.ACTION_DOWN)
+                    ? downEvents[androidKeyCode]
+                    : upEvents[androidKeyCode];
+
+            if (cached == null) {
+                cached = new KeyEvent(keyAction, androidKeyCode);
+                if (keyAction == KeyEvent.ACTION_DOWN) {
+                    downEvents[androidKeyCode] = cached;
+                } else {
+                    upEvents[androidKeyCode] = cached;
+                }
+            }
+
+            webView.dispatchKeyEvent(cached);
+            return;
+        }
+
         webView.dispatchKeyEvent(new KeyEvent(keyAction, androidKeyCode));
     }
 
@@ -795,115 +1015,33 @@ public class MainActivity extends BridgeActivity {
         return Math.max(min, Math.min(max, value));
     }
 
-    private void injectGamepadScript(WebView webView) {
-        String js = "(function() {" +
-                "if (window.virtualGamepadInjected) return;" +
-                "window.virtualGamepadInjected = true;" +
-                
-                "const mockGamepad = {" +
-                "  id: 'Standard Wireless Controller (Tetroid Virtual)'," +
-                "  index: 0," +
-                "  connected: true," +
-                "  timestamp: performance.now()," +
-                "  mapping: 'standard'," +
-                "  axes: [0, 0, 0, 0]," +
-                "  buttons: Array.from({ length: 16 }, () => ({ pressed: false, touched: false, value: 0 }))" +
-                "};" +
-                
-                "navigator.getGamepads = function() {" +
-                "  mockGamepad.timestamp = performance.now();" +
-                "  return [mockGamepad, null, null, null];" +
-                "};" +
-                
-                "let gamepadConnectedDispatched = false;" +
-                
-                "function dispatchConnect() {" +
-                "  if (gamepadConnectedDispatched) return;" +
-                "  gamepadConnectedDispatched = true;" +
-                "  try {" +
-                "    const event = new GamepadEvent('gamepadconnected', { gamepad: mockGamepad });" +
-                "    window.dispatchEvent(event);" +
-                "  } catch (e) {" +
-                "    const event = new Event('gamepadconnected');" +
-                "    event.gamepad = mockGamepad;" +
-                "    window.dispatchEvent(event);" +
-                "  }" +
-                "}" +
-                
-                "window.addEventListener('message', function(event) {" +
-                "  let data;" +
-                "  try { data = JSON.parse(event.data); } catch(e) { data = event.data; }" +
-                "  if (data && data.type === 'INIT_PAD_PORT') {" +
-                "    const port = event.ports[0];" +
-                "    port.onmessage = function(e) {" +
-                "      try {" +
-                "        const btnData = JSON.parse(e.data);" +
-                "        if (mockGamepad.buttons[btnData.btnIndex]) {" +
-                "          mockGamepad.buttons[btnData.btnIndex].pressed = btnData.isPressed;" +
-                "          mockGamepad.buttons[btnData.btnIndex].value = btnData.isPressed ? 1.0 : 0.0;" +
-                "          if (btnData.isPressed) { dispatchConnect(); }" +
-                "        }" +
-                "      } catch(err) {}" +
-                "    };" +
-                "    dispatchConnect();" +
-                "  }" +
-                "});" +
-                "})();";
-        webView.evaluateJavascript(js, null);
-    }
-
-    private void setupMessageChannel(WebView webView) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                WebMessagePort[] channels = webView.createWebMessageChannel();
-                nativePort = channels[0];
-                WebMessagePort jsPort = channels[1];
-
-                injectGamepadScript(webView);
-
-                webView.postWebMessage(
-                        new WebMessage("{\"type\":\"INIT_PAD_PORT\"}", new WebMessagePort[]{jsPort}),
-                        Uri.parse("https://tetr.io")
-                );
-            } catch (Exception e) {
-                Log.e(TAG, "고속 메시지 채널 브릿지 빌드 실패: " + e.getMessage());
-            }
-        }
-    }
-
     private void optimizeWebViewPerformance(WebView webView) {
         if (webView == null) return;
 
         try {
             webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-            webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
-                @Override
-                public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                    super.onPageStarted(view, url, favicon);
-                    hasDispatchedGesture = false;
-                }
-
-                @Override
-                public void onPageFinished(WebView view, String url) {
-                    super.onPageFinished(view, url);
-                    setupMessageChannel(view);
-                }
-
+            /* webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
                 @Override
                 public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, android.webkit.WebResourceRequest request) {
                     String url = request.getUrl().toString();
-                    if (url.contains("googleads") || url.contains("doubleclick") ||
-                            url.contains("adnxs") || url.contains("adservice") || url.contains("pagead")) {
+
+                    if (url.contains("googleads") ||
+                            url.contains("doubleclick") ||
+                            url.contains("adnxs") ||
+                            url.contains("adservice") ||
+                            url.contains("pagead")) {
+
                         return new android.webkit.WebResourceResponse(
-                                "text/plain", "UTF-8", new java.io.ByteArrayInputStream("".getBytes())
+                                "text/plain",
+                                "UTF-8",
+                                new java.io.ByteArrayInputStream("".getBytes())
                         );
                     }
+
                     return super.shouldInterceptRequest(view, request);
                 }
-            });
-
-            webView.loadUrl("https://tetr.io/" + launchRoomCode);
+            }); */
 
             android.webkit.WebSettings settings = webView.getSettings();
             settings.setJavaScriptEnabled(true);
@@ -913,6 +1051,7 @@ public class MainActivity extends BridgeActivity {
             settings.setLoadsImagesAutomatically(true);
             settings.setMediaPlaybackRequiresUserGesture(false);
 
+            webView.loadUrl("https://tetr.io/" + launchRoomCode);
             webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
 
             if (getWindow() != null) {
@@ -922,7 +1061,7 @@ public class MainActivity extends BridgeActivity {
                 );
             }
         } catch (Exception e) {
-            Log.e(TAG, "웹뷰 가속 엔진 및 스크립트 파이프라인 빌드 실패: " + e.getMessage(), e);
+            Log.e(TAG, "웹뷰 가속 엔진 빌드 실패: " + e.getMessage(), e);
         }
     }
 }
