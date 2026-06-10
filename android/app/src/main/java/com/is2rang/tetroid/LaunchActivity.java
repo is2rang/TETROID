@@ -104,7 +104,7 @@ public class LaunchActivity extends Activity {
                 }
 
                 String result = lettersOnly.isEmpty() ? "" : "#" + lettersOnly;
-)
+
                 if (!original.equals(result)) {
                     isUpdating = true;
                     s.replace(0, s.length(), result);

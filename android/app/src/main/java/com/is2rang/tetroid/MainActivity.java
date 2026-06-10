@@ -511,7 +511,6 @@ public class MainActivity extends BridgeActivity {
 
         createVirtualButtons();
         createUtilityControls(combinedPad);
-        setupEditModeInteraction();
 
         rootView.addView(combinedPad);
 
@@ -718,7 +717,8 @@ public class MainActivity extends BridgeActivity {
 
         btnPlus.setOnClickListener(v -> resizeSelectedButton(0.1f));
         btnMinus.setOnClickListener(v -> resizeSelectedButton(-0.1f));
-        btnEditToggle.setOnClickListener(v -> handleToggleTouch());
+        btnEditToggle.setOnClickListener(v -> handleEditToggleTouch());
+        btnVisibilityToggle.setOnClickListener(v -> handleVisibilityToggleTouch());
 
         parent.addView(btnVisibilityToggle);
         parent.addView(btnEsc);
@@ -727,7 +727,7 @@ public class MainActivity extends BridgeActivity {
         parent.addView(sizeBar);
     }
     
-    private void handleToggleTouch() {
+    private void handleVisibilityToggleTouch() {
         isPadVisible = !isPadVisible;
 
         if (!isPadVisible) {
@@ -762,42 +762,37 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    private void setupEditModeInteraction() {
-        btnEditToggle.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!isPadVisible) return;
+    private void handleEditToggleTouch() {
+        if (!isPadVisible) return;
 
-                if (isEditMode) {
-                    isEditMode = false;
-                    btnEditToggle.setText("Edit");
-                    sizeBar.setVisibility(View.GONE);
+        if (isEditMode) {
+            isEditMode = false;
+            btnEditToggle.setText("Edit");
+            sizeBar.setVisibility(View.GONE);
 
-                    if (selectedButton != null) {
-                        selectedButton.selected = false;
-                        selectedButton = null;
-                    }
-
-                    executeSaveCurrentLayouts();
-                    if (combinedPad != null) {
-                        combinedPad.invalidate();
-                    }
-                } else {
-                    isEditMode = true;
-                    btnEditToggle.setText("Save");
-                    clearHoverOperationalStates();
-
-                    if (selectedButton != null) {
-                        selectedButton.selected = false;
-                        selectedButton = null;
-                    }
-                    sizeBar.setVisibility(View.GONE);
-                    if (combinedPad != null) {
-                        combinedPad.invalidate();
-                    }
-                }
+            if (selectedButton != null) {
+                selectedButton.selected = false;
+                selectedButton = null;
             }
-        });
+
+            executeSaveCurrentLayouts();
+            if (combinedPad != null) {
+                combinedPad.invalidate();
+            }
+        } else {
+            isEditMode = true;
+            btnEditToggle.setText("Save");
+            clearHoverOperationalStates();
+
+            if (selectedButton != null) {
+                selectedButton.selected = false;
+                selectedButton = null;
+            }
+            sizeBar.setVisibility(View.GONE);
+            if (combinedPad != null) {
+                combinedPad.invalidate();
+            }
+        }
     }
 
     private void executeSaveCurrentLayouts() {
