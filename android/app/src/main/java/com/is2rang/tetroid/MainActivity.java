@@ -35,7 +35,6 @@ public class MainActivity extends BridgeActivity {
     private static final String TAG = "TetrioMobile";
     private static final int GRID_SIZE_DP = 10;
     private static final String PREFS_NAME = "TetroidCustomPadPrefs";
-
     private static final int MAX_CACHED_KEY_CODE = 1023;
 
     private String launchRoomCode = "";
@@ -111,12 +110,23 @@ public class MainActivity extends BridgeActivity {
     }
 
     private class GamePadOverlay extends FrameLayout {
+        private static final int HITMAP_CELL_SIZE_DP = 20;
+
         private final Paint buttonPaint = new Paint();
         private final Paint selectedBorderPaint = new Paint();
         private final Paint textPaint = new Paint();
 
         private final List<VirtualButton> buttons = new ArrayList<>();
+
         private VirtualButton[] pointerButtonMap = new VirtualButton[16];
+        private int[] pointerCellXMap = new int[16];
+        private int[] pointerCellYMap = new int[16];
+
+        private int hitMapCellSizePx;
+        private int hitMapCols = 0;
+        private int hitMapRows = 0;
+        private VirtualButton[] hitMap = new VirtualButton[0];
+        private boolean hitMapDirty = true;
 
         private boolean layoutInitialized = false;
 
@@ -135,6 +145,10 @@ public class MainActivity extends BridgeActivity {
             setClipChildren(false);
             setClipToPadding(false);
 
+            hitMapCellSizePx = Math.max(1, dpToPx(HITMAP_CELL_SIZE_DP));
+            Arrays.fill(pointerCellXMap, -1);
+            Arrays.fill(pointerCellYMap, -1);
+
             buttonPaint.setColor(Color.parseColor("#66000000"));
 
             selectedBorderPaint.setStyle(Paint.Style.STROKE);
@@ -148,10 +162,15 @@ public class MainActivity extends BridgeActivity {
 
         void addVirtualButton(VirtualButton button) {
             buttons.add(button);
+            markHitMapDirty();
         }
 
         List<VirtualButton> getButtons() {
             return buttons;
+        }
+
+        void markHitMapDirty() {
+            hitMapDirty = true;
         }
 
         void setPadVisible(boolean visible) {
@@ -178,6 +197,7 @@ public class MainActivity extends BridgeActivity {
             }
 
             layoutInitialized = true;
+            markHitMapDirty();
             postInvalidateOnAnimation();
         }
 
@@ -278,6 +298,8 @@ public class MainActivity extends BridgeActivity {
 
                 Arrays.fill(keyPressRefCounts, 0);
                 Arrays.fill(pointerButtonMap, null);
+                Arrays.fill(pointerCellXMap, -1);
+                Arrays.fill(pointerCellYMap, -1);
                 postInvalidateOnAnimation();
                 return;
             }
@@ -288,6 +310,8 @@ public class MainActivity extends BridgeActivity {
                     releaseButton(webView, btn);
                     pointerButtonMap[i] = null;
                 }
+                pointerCellXMap[i] = -1;
+                pointerCellYMap[i] = -1;
             }
 
             postInvalidateOnAnimation();
@@ -308,6 +332,11 @@ public class MainActivity extends BridgeActivity {
             }
 
             pointerButtonMap = Arrays.copyOf(pointerButtonMap, newSize);
+            pointerCellXMap = Arrays.copyOf(pointerCellXMap, newSize);
+            pointerCellYMap = Arrays.copyOf(pointerCellYMap, newSize);
+
+            Arrays.fill(pointerCellXMap, hitMapCols == 0 ? -1 : -1);
+            Arrays.fill(pointerCellYMap, hitMapRows == 0 ? -1 : -1);
         }
 
         private void setPointerButton(int pointerId, VirtualButton btn) {
@@ -322,20 +351,93 @@ public class MainActivity extends BridgeActivity {
             return pointerButtonMap[pointerId];
         }
 
+        private int getPointerCellX(int pointerId) {
+            if (pointerId < 0 || pointerId >= pointerCellXMap.length) {
+                return -1;
+            }
+            return pointerCellXMap[pointerId];
+        }
+
+        private int getPointerCellY(int pointerId) {
+            if (pointerId < 0 || pointerId >= pointerCellYMap.length) {
+                return -1;
+            }
+            return pointerCellYMap[pointerId];
+        }
+
+        private void setPointerCell(int pointerId, int cellX, int cellY) {
+            ensurePointerCapacity(pointerId);
+            pointerCellXMap[pointerId] = cellX;
+            pointerCellYMap[pointerId] = cellY;
+        }
+
         private void clearPointerButton(int pointerId) {
             if (pointerId < 0 || pointerId >= pointerButtonMap.length) {
                 return;
             }
             pointerButtonMap[pointerId] = null;
+            pointerCellXMap[pointerId] = -1;
+            pointerCellYMap[pointerId] = -1;
+        }
+
+        private void rebuildHitMapIfNeeded() {
+            if (!hitMapDirty) {
+                return;
+            }
+
+            int width = getWidth();
+            int height = getHeight();
+
+            if (width <= 0 || height <= 0) {
+                return;
+            }
+
+            hitMapCellSizePx = Math.max(1, dpToPx(HITMAP_CELL_SIZE_DP));
+            hitMapCols = Math.max(1, (width + hitMapCellSizePx - 1) / hitMapCellSizePx);
+            hitMapRows = Math.max(1, (height + hitMapCellSizePx - 1) / hitMapCellSizePx);
+            hitMap = new VirtualButton[hitMapCols * hitMapRows];
+
+            for (int i = 0; i < buttons.size(); i++) {
+                VirtualButton btn = buttons.get(i);
+                if (btn == null) {
+                    continue;
+                }
+
+                int leftCell = Math.max(0, (int) (btn.bounds.left / hitMapCellSizePx));
+                int topCell = Math.max(0, (int) (btn.bounds.top / hitMapCellSizePx));
+                int rightCell = Math.min(hitMapCols - 1, (int) ((btn.bounds.right - 1) / hitMapCellSizePx));
+                int bottomCell = Math.min(hitMapRows - 1, (int) ((btn.bounds.bottom - 1) / hitMapCellSizePx));
+
+                for (int row = topCell; row <= bottomCell; row++) {
+                    int rowBase = row * hitMapCols;
+                    for (int col = leftCell; col <= rightCell; col++) {
+                        hitMap[rowBase + col] = btn;
+                    }
+                }
+            }
+
+            hitMapDirty = false;
         }
 
         private VirtualButton findButtonAt(float x, float y) {
-            for (int i = 0; i < buttons.size(); i++) {
-                VirtualButton btn = buttons.get(i);
-                if (btn.hitRect.contains((int) x, (int) y)) {
-                    return btn;
-                }
+            rebuildHitMapIfNeeded();
+
+            if (hitMap.length == 0 || hitMapCols <= 0 || hitMapRows <= 0) {
+                return null;
             }
+
+            int cellX = (int) (x / hitMapCellSizePx);
+            int cellY = (int) (y / hitMapCellSizePx);
+
+            if (cellX < 0 || cellY < 0 || cellX >= hitMapCols || cellY >= hitMapRows) {
+                return null;
+            }
+
+            VirtualButton btn = hitMap[cellY * hitMapCols + cellX];
+            if (btn != null && btn.hitRect.contains((int) x, (int) y)) {
+                return btn;
+            }
+
             return null;
         }
 
@@ -379,6 +481,7 @@ public class MainActivity extends BridgeActivity {
                     newTop = clamp(newTop, 0f, maxTop);
 
                     selectedButton.setBounds(newLeft, newTop);
+                    markHitMapDirty();
                     postInvalidateOnAnimation();
                     return true;
                 }
@@ -404,9 +507,16 @@ public class MainActivity extends BridgeActivity {
                 case MotionEvent.ACTION_DOWN:
                 case MotionEvent.ACTION_POINTER_DOWN: {
                     int pointerId = event.getPointerId(actionIndex);
-                    VirtualButton btn = findButtonAt(event.getX(actionIndex), event.getY(actionIndex));
+                    float x = event.getX(actionIndex);
+                    float y = event.getY(actionIndex);
 
+                    VirtualButton btn = findButtonAt(x, y);
                     setPointerButton(pointerId, btn);
+
+                    int cellX = (int) (x / hitMapCellSizePx);
+                    int cellY = (int) (y / hitMapCellSizePx);
+                    setPointerCell(pointerId, cellX, cellY);
+
                     pressButton(webView, btn);
                     return true;
                 }
@@ -416,14 +526,29 @@ public class MainActivity extends BridgeActivity {
 
                     for (int i = 0; i < pointerCount; i++) {
                         int pointerId = event.getPointerId(i);
+                        float x = event.getX(i);
+                        float y = event.getY(i);
+
+                        int cellX = (int) (x / hitMapCellSizePx);
+                        int cellY = (int) (y / hitMapCellSizePx);
+
+                        int oldCellX = getPointerCellX(pointerId);
+                        int oldCellY = getPointerCellY(pointerId);
+
+                        if (cellX == oldCellX && cellY == oldCellY) {
+                            continue;
+                        }
+
                         VirtualButton oldBtn = getPointerButton(pointerId);
-                        VirtualButton newBtn = findButtonAt(event.getX(i), event.getY(i));
+                        VirtualButton newBtn = findButtonAt(x, y);
 
                         if (oldBtn != newBtn) {
                             releaseButton(webView, oldBtn);
                             pressButton(webView, newBtn);
                             setPointerButton(pointerId, newBtn);
                         }
+
+                        setPointerCell(pointerId, cellX, cellY);
                     }
 
                     return true;
@@ -467,6 +592,12 @@ public class MainActivity extends BridgeActivity {
                 float cy = btn.bounds.centerY() - ((textPaint.descent() + textPaint.ascent()) / 2f);
                 canvas.drawText(btn.label, cx, cy, textPaint);
             }
+        }
+
+        @Override
+        protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+            super.onSizeChanged(w, h, oldw, oldh);
+            hitMapDirty = true;
         }
 
         @Override
@@ -913,6 +1044,7 @@ public class MainActivity extends BridgeActivity {
         float top = selectedButton.bounds.top;
 
         selectedButton.setBounds(left, top);
+        combinedPad.markHitMapDirty();
         refreshScaleText();
         combinedPad.postInvalidateOnAnimation();
     }
@@ -1021,28 +1153,6 @@ public class MainActivity extends BridgeActivity {
         try {
             webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-            /* webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
-                @Override
-                public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, android.webkit.WebResourceRequest request) {
-                    String url = request.getUrl().toString();
-
-                    if (url.contains("googleads") ||
-                            url.contains("doubleclick") ||
-                            url.contains("adnxs") ||
-                            url.contains("adservice") ||
-                            url.contains("pagead")) {
-
-                        return new android.webkit.WebResourceResponse(
-                                "text/plain",
-                                "UTF-8",
-                                new java.io.ByteArrayInputStream("".getBytes())
-                        );
-                    }
-
-                    return super.shouldInterceptRequest(view, request);
-                }
-            }); */
-
             android.webkit.WebSettings settings = webView.getSettings();
             settings.setJavaScriptEnabled(true);
             settings.setDomStorageEnabled(true);
@@ -1051,8 +1161,12 @@ public class MainActivity extends BridgeActivity {
             settings.setLoadsImagesAutomatically(true);
             settings.setMediaPlaybackRequiresUserGesture(false);
 
-            webView.loadUrl("https://tetr.io/" + launchRoomCode);
             webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+            webView.requestFocus();
+            webView.setFocusable(true);
+            webView.setFocusableInTouchMode(true);
+
+            webView.loadUrl("https://tetr.io/" + launchRoomCode);
 
             if (getWindow() != null) {
                 getWindow().setFlags(
