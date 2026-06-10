@@ -55,7 +55,6 @@ public class MainActivity extends BridgeActivity {
     private Button btnVisibilityToggle;
     private Button btnEsc;
     private Button btnR;
-    private Button btnEnter;
 
     private class VirtualButton {
         final String saveKey;
@@ -81,11 +80,11 @@ public class MainActivity extends BridgeActivity {
         }
 
         float getWidthPx() {
-            return dpToPx(baseWidthDp) * scaleFactor;
+            return Math.round(dpToPx(baseWidthDp) * scaleFactor);
         }
 
         float getHeightPx() {
-            return dpToPx(baseHeightDp) * scaleFactor;
+            return Math.round(dpToPx(baseHeightDp) * scaleFactor);
         }
 
         void setBounds(float left, float top) {
@@ -106,9 +105,9 @@ public class MainActivity extends BridgeActivity {
     }
 
     private class GamePadOverlay extends FrameLayout {
-        private final Paint buttonPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint selectedBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint buttonPaint = new Paint();
+        private final Paint selectedBorderPaint = new Paint();
+        private final Paint textPaint = new Paint();
 
         private final List<VirtualButton> buttons = new ArrayList<>();
         private final SparseArray<VirtualButton> pointerButtonMap = new SparseArray<>();
@@ -639,30 +638,13 @@ public class MainActivity extends BridgeActivity {
         btnR.setTextColor(Color.WHITE);
         btnR.setTextSize(14);
 
-        btnEnter = new Button(this);
-        btnEnter.setText("<");
-        FrameLayout.LayoutParams enterParams = new FrameLayout.LayoutParams(dpToPx(50), dpToPx(50));
-        enterParams.gravity = Gravity.TOP | Gravity.LEFT;
-        enterParams.setMargins(dpToPx(15 + 50 + 8 + 50 + 8 + 50 + 8), dpToPx(15), 0, 0);
-        btnEnter.setLayoutParams(enterParams);
-        btnEnter.setBackgroundColor(Color.parseColor("#66000000"));
-        btnEnter.setTextColor(Color.WHITE);
-        btnEnter.setTextSize(14);
-
         View.OnTouchListener utilityTouchListener = new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 WebView webView = getCurrentWebView();
                 if (webView == null) return false;
 
-                int keyCode;
-                if (v == btnEsc) {
-                    keyCode = KeyEvent.KEYCODE_ESCAPE;
-                } else if (v == btnR) {
-                    keyCode = KeyEvent.KEYCODE_R;
-                } else {
-                    keyCode = KeyEvent.KEYCODE_ENTER;
-                }
+                int keyCode = v == btnEsc ? KeyEvent.KEYCODE_ESCAPE : KeyEvent.KEYCODE_R;
 
                 int action = event.getActionMasked();
                 if (action == MotionEvent.ACTION_DOWN) {
@@ -679,7 +661,6 @@ public class MainActivity extends BridgeActivity {
 
         btnEsc.setOnTouchListener(utilityTouchListener);
         btnR.setOnTouchListener(utilityTouchListener);
-        btnEnter.setOnTouchListener(utilityTouchListener);
 
         btnEditToggle = new Button(this);
         btnEditToggle.setText("Edit");
@@ -735,66 +716,50 @@ public class MainActivity extends BridgeActivity {
         sizeBar.addView(tvScale);
         sizeBar.addView(btnPlus);
 
-        btnPlus.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                resizeSelectedButton(0.1f);
-            }
-        });
-
-        btnMinus.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                resizeSelectedButton(-0.1f);
-            }
-        });
+        btnPlus.setOnClickListener(v -> resizeSelectedButton(0.1f));
+        btnMinus.setOnClickListener(v -> resizeSelectedButton(-0.1f));
+        btnEditToggle.setOnClickListener(v -> handleToggleTouch());
 
         parent.addView(btnVisibilityToggle);
         parent.addView(btnEsc);
         parent.addView(btnR);
-        parent.addView(btnEnter);
         parent.addView(btnEditToggle);
         parent.addView(sizeBar);
+    }
+    
+    private void handleToggleTouch() {
+        isPadVisible = !isPadVisible;
 
-        btnVisibilityToggle.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                isPadVisible = !isPadVisible;
+        if (!isPadVisible) {
+            btnVisibilityToggle.setText("○");
 
-                if (!isPadVisible) {
-                    btnVisibilityToggle.setText("○");
-
-                    if (isEditMode) {
-                        isEditMode = false;
-                        btnEditToggle.setText("Edit");
-                        sizeBar.setVisibility(View.GONE);
-                        clearSelectedButton();
-                    }
-
-                    clearHoverOperationalStates();
-
-                    btnEditToggle.setVisibility(View.GONE);
-                    btnEsc.setVisibility(View.GONE);
-                    btnR.setVisibility(View.GONE);
-                    btnEnter.setVisibility(View.GONE);
-                } else {
-                    btnVisibilityToggle.setText("●");
-                    btnEditToggle.setVisibility(View.VISIBLE);
-                    btnEsc.setVisibility(View.VISIBLE);
-                    btnR.setVisibility(View.VISIBLE);
-                    btnEnter.setVisibility(View.VISIBLE);
-
-                    if (combinedPad != null) {
-                        combinedPad.setPadVisible(true);
-                        combinedPad.invalidate();
-                    }
-                }
-
-                if (combinedPad != null) {
-                    combinedPad.setPadVisible(isPadVisible);
-                }
+            if (isEditMode) {
+                isEditMode = false;
+                btnEditToggle.setText("Edit");
+                sizeBar.setVisibility(View.GONE);
+                clearSelectedButton();
             }
-        });
+
+            clearHoverOperationalStates();
+
+            btnEditToggle.setVisibility(View.GONE);
+            btnEsc.setVisibility(View.GONE);
+            btnR.setVisibility(View.GONE);
+        } else {
+            btnVisibilityToggle.setText("●");
+            btnEditToggle.setVisibility(View.VISIBLE);
+            btnEsc.setVisibility(View.VISIBLE);
+            btnR.setVisibility(View.VISIBLE);
+
+            if (combinedPad != null) {
+                combinedPad.setPadVisible(true);
+                combinedPad.invalidate();
+            }
+        }
+
+        if (combinedPad != null) {
+            combinedPad.setPadVisible(isPadVisible);
+        }
     }
 
     private void setupEditModeInteraction() {
@@ -908,10 +873,6 @@ public class MainActivity extends BridgeActivity {
                 sendNativeKeyEvent(webView, KeyEvent.ACTION_DOWN, code);
             }
         }
-
-        // if (combinedPad != null) {
-        //    combinedPad.invalidate();
-        //}
     }
 
     private void releaseButton(WebView webView, VirtualButton btn) {
@@ -927,10 +888,6 @@ public class MainActivity extends BridgeActivity {
             for (int code : btn.androidKeyCodes) {
                 sendNativeKeyEvent(webView, KeyEvent.ACTION_UP, code);
             }
-        }
-
-        if (combinedPad != null) {
-            combinedPad.invalidate();
         }
     }
 
@@ -952,7 +909,7 @@ public class MainActivity extends BridgeActivity {
         try {
             webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-            webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
+            /* webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(getBridge()) {
                 @Override
                 public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, android.webkit.WebResourceRequest request) {
                     String url = request.getUrl().toString();
@@ -972,7 +929,7 @@ public class MainActivity extends BridgeActivity {
 
                     return super.shouldInterceptRequest(view, request);
                 }
-            });
+            }); */
 
             webView.loadUrl("https://tetr.io/" + launchRoomCode);
 
