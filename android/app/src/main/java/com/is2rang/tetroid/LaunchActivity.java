@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
@@ -15,6 +16,8 @@ import android.view.Gravity;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.MotionEvent;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -147,6 +150,30 @@ public class LaunchActivity extends Activity {
         if (playBtn != null) {
             playBtn.setText("PLAY");
         }
+    }
+    
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+            View focus = getCurrentFocus();
+    
+            if (focus instanceof EditText) {
+                Rect outRect = new Rect();
+                focus.getGlobalVisibleRect(outRect);
+    
+                if (!outRect.contains((int) ev.getRawX(), (int) ev.getRawY())) {
+                    focus.clearFocus();
+    
+                    InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+    
+                    if (imm != null) {
+                        imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
+                    }
+                }
+            }
+        }
+    
+        return super.dispatchTouchEvent(ev);
     }
 
     private int dpToPx(int dp) {
