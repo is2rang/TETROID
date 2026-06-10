@@ -31,6 +31,7 @@ import android.widget.TextView;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebMessageCompat;
 import androidx.webkit.WebMessagePortCompat;
+import androidx.webkit.WebViewFeature;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -897,11 +898,11 @@ public class MainActivity extends BridgeActivity {
 
                     webView.evaluateJavascript(jsCode, null);
 
-                    if (WebViewCompat.isFeatureSupported(WebViewCompat.FEATURE_WEB_MESSAGE_CHANNELS)) {
+                    if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_CHANNELS)) {
                         WebMessagePortCompat[] ports = WebViewCompat.createWebMessageChannel(webView);
                         nativePort = ports[0];
                         WebMessagePortCompat webPort = ports[1];
-
+                    
                         WebViewCompat.postWebMessage(webView, 
                                 new WebMessageCompat("init_tetroid_port", new WebMessagePortCompat[]{webPort}), 
                                 android.net.Uri.parse("https://tetr.io"));
