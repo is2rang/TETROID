@@ -1,4 +1,4 @@
-Package com.is2rang.tetroid;
+package com.is2rang.tetroid;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -10,11 +10,14 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.InputDevice;
+import android.view.KeyCharacterMap;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -48,6 +51,8 @@ public class MainActivity extends BridgeActivity {
     private float displayDensity;
 
     private GamePadOverlay combinedPad;
+    
+    private final SparseArray<Long> keyByDownTimes = new SparseArray<>();
 
     private LinearLayout sizeBar;
     private TextView tvScale;
