@@ -80,11 +80,11 @@ public class MainActivity extends BridgeActivity {
         }
 
         float getWidthPx() {
-            return Math.round(dpToPx(baseWidthDp) * scaleFactor);
+            return dpToPx(baseWidthDp) * scaleFactor;
         }
 
         float getHeightPx() {
-            return Math.round(dpToPx(baseHeightDp) * scaleFactor);
+            return dpToPx(baseHeightDp) * scaleFactor;
         }
 
         void setBounds(float left, float top) {

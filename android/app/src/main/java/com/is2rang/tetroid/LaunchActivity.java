@@ -6,6 +6,8 @@ import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -20,6 +22,7 @@ import android.widget.LinearLayout;
 public class LaunchActivity extends Activity {
 
     private EditText roomInput;
+    private Button playBtn;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,14 +75,49 @@ public class LaunchActivity extends Activity {
 
         roomInput.setLayoutParams(inputParams);
 
-        Button playBtn = new Button(this);
+        playBtn = new Button(this);
         playBtn.setText("PLAY");
 
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(dpToPx(180), dpToPx(60));
-
         buttonParams.topMargin = dpToPx(20);
-
         playBtn.setLayoutParams(buttonParams);
+
+        roomInput.addTextChangedListener(new TextWatcher() {
+            private boolean isUpdating = false;
+
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (isUpdating) return;
+
+                String original = s.toString();
+
+                String lettersOnly = original.replaceAll("[^a-zA-Z]", "").toUpperCase();
+
+                if (lettersOnly.length() > 4) {
+                    lettersOnly = lettersOnly.substring(0, 4);
+                }
+
+                String result = lettersOnly.isEmpty() ? "" : "#" + lettersOnly;
+)
+                if (!original.equals(result)) {
+                    isUpdating = true;
+                    s.replace(0, s.length(), result);
+                    isUpdating = false;
+                }
+
+                if (result.isEmpty()) {
+                    playBtn.setText("PLAY");
+                } else {
+                    playBtn.setText("JOIN");
+                }
+            }
+        });
 
         root.addView(roomInput);
         root.addView(playBtn);
@@ -87,16 +125,10 @@ public class LaunchActivity extends Activity {
         setContentView(root);
 
         playBtn.setOnClickListener(v -> {
-
-            String roomCode = roomInput.getText() .toString().trim();
-            if (!roomCode.isEmpty()) {
-                roomCode = "#" + roomCode.toUpperCase();
-            }
+            String roomCode = roomInput.getText().toString().trim();
 
             Intent intent = new Intent(LaunchActivity.this, MainActivity.class);
-
             intent.putExtra("roomCode", roomCode);
-
             startActivity(intent);
         });
     }
@@ -107,6 +139,9 @@ public class LaunchActivity extends Activity {
 
         if (roomInput != null) {
             roomInput.setText("");
+        }
+        if (playBtn != null) {
+            playBtn.setText("PLAY");
         }
     }
 
