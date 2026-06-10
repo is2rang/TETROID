@@ -799,20 +799,20 @@ public class MainActivity extends BridgeActivity {
         return getBridge().getWebView();
     }
 
-    // 신규 양방향 비동기 프록시 기반 고속 데이터 송신 로직
     private void sendGamepadState(int[] indices, boolean isPressed) {
-        if (currentReplyProxy == null) return;
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\"type\":\"PAD\",\"pressed\":").append(isPressed).append(",\"indices\":[");
+        WebView webView = getCurrentWebView();
+        if (webView == null) return;
+        
+        StringBuilder sb = new StringBuilder("if(window.updateTetroidButtons){window.updateTetroidButtons([");
         for (int i = 0; i < indices.length; i++) {
             sb.append(indices[i]);
             if (i < indices.length - 1) sb.append(",");
         }
-        sb.append("]}");
-
-        currentReplyProxy.postMessage(sb.toString());
+        sb.append("], ").append(isPressed).append(");}");
+        
+        webView.post(() -> webView.evaluateJavascript(sb.toString(), null));
     }
+
 
     private void pressButton(WebView webView, VirtualButton btn) {
         if (btn == null) return;
@@ -860,11 +860,11 @@ public class MainActivity extends BridgeActivity {
 
     private void optimizeWebViewPerformance(WebView webView) {
         if (webView == null) return;
-
+    
         try {
             webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
             webView.loadUrl("https://tetr.io/" + launchRoomCode);
-
+    
             android.webkit.WebSettings settings = webView.getSettings();
             settings.setJavaScriptEnabled(true);
             settings.setDomStorageEnabled(true);
@@ -872,55 +872,57 @@ public class MainActivity extends BridgeActivity {
             settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
             settings.setLoadsImagesAutomatically(true);
             settings.setMediaPlaybackRequiresUserGesture(false);
-
-            HashSet<String> allowedOrigins = new HashSet<>(Collections.singletonList("https://tetr.io"));
-
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
-                WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-
-                // [구조 안정화] 카파시터 고유 웹 클라이언트를 파괴하지 않는 안정적 포트 리스너 연결
-                WebViewCompat.addWebMessageListener(webView, "tetroidNative", allowedOrigins,
-                    new WebViewCompat.WebMessageListener() {
-                        @Override
-                        public void onPostMessage(WebView view, WebMessageCompat message, android.net.Uri sourceOrigin, boolean isMainFrame, JavaScriptReplyProxy replyProxy) {
-                            if ("READY".equals(message.getData())) {
-                                Log.d(TAG, "⚡ Tetroid 고속 패드 커넥션 채널 개설 완료!");
-                                currentReplyProxy = replyProxy; 
-                            }
-                        }
-                    }
-                );
-
-                // [레이스 컨디션 해결] 인게임 스크립트 실행 이전에 HTML5 Gamepad API 규격 하이재킹 완료 보장
+    
+            // TETR.IO 메인 및 대치/인게임 서버 도메인 전반 커버
+            HashSet<String> allowedOrigins = new HashSet<>(java.util.Arrays.asList("https://tetr.io", "https://*.tetr.io"));
+    
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                
+                // [핵심 변경] Object.defineProperty를 이용하여 브라우저 고유의 Read-Only 락을 깨부수고 강제 바인딩
                 String jsCode = "(function() { " +
-                        "const virtualGamepad = { id: 'Tetroid Gamepad', index: 0, connected: true, timestamp: performance.now(), mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({length: 17}, () => ({ pressed: false, touched: false, value: 0 })) }; " +
-                        "navigator.getGamepads = function() { return [virtualGamepad]; }; " +
-                        "window.tetroidNative.onmessage = function(event) { " +
-                        "   const data = JSON.parse(event.data); " +
-                        "   for(let i=0; i<data.indices.length; i++) { " +
-                        "       const idx = data.indices[i]; " +
-                        "       virtualGamepad.buttons[idx].pressed = data.pressed; " +
-                        "       virtualGamepad.buttons[idx].value = data.pressed ? 1 : 0; " +
-                        "   } " +
-                        "   virtualGamepad.timestamp = performance.now(); " +
-                        "}; " +
-                        "function trigger() { window.dispatchEvent(new GamepadEvent('gamepadconnected', { gamepad: virtualGamepad })); }" +
-                        "trigger(); setInterval(trigger, 3000); " +
-                        "window.tetroidNative.postMessage('READY'); " +
+                        "   if (window.tetroidInjected) return; " +
+                        "   window.tetroidInjected = true; " +
+                        "   " +
+                        "   const virtualGamepad = { " +
+                        "       id: 'Xbox 360 Controller (Standard Gamepad)', " + // 유명 패드로 네임 마스킹하여 호환성 극대화
+                        "       index: 0, " +
+                        "       connected: true, " +
+                        "       timestamp: performance.now(), " +
+                        "       mapping: 'standard', " +
+                        "       axes: [0, 0, 0, 0], " +
+                        "       buttons: Array.from({length: 17}, () => ({ pressed: false, touched: false, value: 0 })) " +
+                        "   }; " +
+                        "   " +
+                        "   Object.defineProperty(Navigator.prototype, 'getGamepads', { " +
+                        "       value: function() { return [virtualGamepad]; }, " +
+                        "       writable: true, " +
+                        "       configurable: true " +
+                        "   }); " +
+                        "   " +
+                        "   window.updateTetroidButtons = function(indices, isPressed) { " +
+                        "       indices.forEach(idx => { " +
+                        "           if (virtualGamepad.buttons[idx]) { " +
+                        "               virtualGamepad.buttons[idx].pressed = isPressed; " +
+                        "               virtualGamepad.buttons[idx].value = isPressed ? 1 : 0; " +
+                        "           } " +
+                        "       }); " +
+                        "       virtualGamepad.timestamp = performance.now(); " + // 타임스탬프를 갱신해야 TETR.IO 엔진이 감지함
+                        "   }; " +
+                        "   " +
+                        "   function trigger() { window.dispatchEvent(new GamepadEvent('gamepadconnected', { gamepad: virtualGamepad })); }" +
+                        "   trigger(); setInterval(trigger, 1500); " + // 패드 연결 신호 지속적 브로드캐스팅
                         "})();";
-
+    
                 WebViewCompat.addDocumentStartJavaScript(webView, jsCode, allowedOrigins);
+                Log.d(TAG, "🚀 가상 게임패드 커널 프로토타입 주입 완료");
             }
-
+    
             webView.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
             if (getWindow() != null) {
-                getWindow().setFlags(
-                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
-                );
+                getWindow().setFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED, WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
             }
         } catch (Exception e) {
-            Log.e(TAG, "통신 파이프라인 아키텍처 빌드 실패: " + e.getMessage(), e);
+            Log.e(TAG, "웹뷰 아키텍처 최적화 실패: " + e.getMessage(), e);
         }
     }
 }
