@@ -80,11 +80,13 @@ public class MainActivity extends BridgeActivity {
         }
 
         float getWidthPx() {
-            return dpToPx(baseWidthDp) * scaleFactor;
+            float grid = dpToPx(GRID_SIZE_DP);
+            return Math.round((dpToPx(baseWidthDp) * scaleFactor) / grid) * grid;
         }
-
+        
         float getHeightPx() {
-            return dpToPx(baseHeightDp) * scaleFactor;
+            float grid = dpToPx(GRID_SIZE_DP);
+            return Math.round((dpToPx(baseHeightDp) * scaleFactor) / grid) * grid;
         }
 
         void setBounds(float left, float top) {

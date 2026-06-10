@@ -66,6 +66,11 @@ public class LaunchActivity extends Activity {
 
         roomInput.setTextColor(Color.WHITE);
         roomInput.setHintTextColor(Color.GRAY);
+        
+        roomInput.setImeOptions(
+        EditorInfo.IME_FLAG_NO_EXTRACT_UI| EditorInfo.IME_ACTION_DONE);
+        
+        roomInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
 
         LinearLayout.LayoutParams inputParams =
                 new LinearLayout.LayoutParams(
